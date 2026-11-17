@@ -28,7 +28,7 @@ secrets locally, and nothing is built, tagged or published from a laptop. Work l
 | Mode | Starts from | Version | Publishes |
 | --- | --- | --- | --- |
 | dev | every push to `dev` (not Markdown-only) | `<next patch>-dev.<run>`, e.g. `0.2.1-dev.57` | the [release service](#the-release-service) channel `dev` (`browse-extension-<version>.zip`, loaded unpacked, and every CLI binary target), then npm dist-tag `dev` (the binaries, then `@opencode/browse`) |
-| stable | **Actions → Release → Run workflow** on `dev` with a bump or version and release notes | `x.y.z` | tag `v<version>`, the [release service](#the-release-service) channel `stable` (the extension zip and every CLI binary target), npm `latest`, the public Chrome Web Store item (`browse-extension-<version>.zip`), the GitHub release |
+| stable | **Actions → Release → Run workflow** on `dev` with a bump or version and release notes | `x.y.z` | tag `v<version>`, the [release service](#the-release-service) channel `stable` (the extension zip and every CLI binary target), npm `latest`, the Firefox add-on `release/firefox/browse-<version>.zip` (built by `bun run build-for-amo`, signed and uploaded to addons.mozilla.org by hand — [The Firefox add-on](#the-firefox-add-on)), the GitHub release |
 | check | the same button with bump `check` and no version, on any branch (`gh workflow run release.yml --ref <branch>`) | `cli/package.json` | nothing: builds, checks and attests the stable artifacts and runs every publish script, the release service included, as a dry run |
 
 There's no `production` branch: browse has no website. If it gets one, the site deploys from `production`, as in
@@ -58,32 +58,48 @@ build-binaries  packs and checks the @opencode/browse-<target> tarballs (every t
         @opencode/browse with its platform package
 sign-macos      optional (repository variable MACOS_SIGNING=true): Developer ID signs the macOS binaries; skipped now
 attest  build provenance for the zip and every tarball (Sigstore)
-publish-release-service       the extension and every CLI binary target to the release service (channel dev or
+publish-release-service       the extension zip and every CLI binary target to the release service (channel dev or
         stable); a check run prints the list and publishes nothing
-publish-npm  +  publish-cws   npm latest (--ignore-scripts, provenance; the platform packages first, then
-        @opencode/browse) and Chrome Web Store upload + submit (none when the extension is unchanged)
+publish-npm  npm latest (--ignore-scripts, provenance; the platform packages first, then @opencode/browse).
+        The Firefox add-on is built, signed and uploaded to addons.mozilla.org by hand, see The Firefox add-on
 publish-github-release        the release on v<version>: notes, zip, tarball, SHA256SUMS, attestation
 push-release-to-dev           pushes the release commit to dev (deploy key), so dev builds count up from it
 ```
 
-The store review takes hours to a few days (the job summary shows `PENDING_REVIEW`); `publish-cws` cancels an
-earlier version still in review, so the newest build is the one reviewed. When the zip is the extension the store
-already has, with only the manifest `version`/`version_name` changed (a CLI or packaging release), it uploads and
-submits nothing, says so in the job summary, and the release goes on: the store keeps the version it has, and the
-GitHub release and the release commit to dev still run. Binary installs follow the release service at launch and at
-least hourly, and switch when no agent is using the browser; npm installs check once an hour and switch the same way;
-the Chrome Web Store updates the extension.
+AMO review takes hours to a few days (it shows in the Developer Hub); a version still in review can be cancelled
+there, and a fixed version needs a new version number. Binary installs follow the
+release service at launch and at least hourly, and switch when no agent is using the browser; npm installs check once
+an hour and switch the same way; a signed Firefox add-on updates from addons.mozilla.org, and a temporary one is
+replaced by rebuilding it (`./setup-full.sh --extension-only`).
 
 **If a job fails**, fix it and rerun the failed jobs. Publishing is idempotent: a version that's already on npm,
-already submitted to the store, or already current on the release service is skipped, and the tag is reused when it
+already uploaded to addons.mozilla.org, or already current on the release service is skipped, and the tag is reused when it
 holds the same tree.
 
-A `publish-cws` 400 from `:publish` saying the submission "does not meet the requirements to be published in the
-store" means a dashboard field needs fixing, not the build: correct it in the
-[developer dashboard](https://chrome.google.com/webstore/devconsole) (most often a new manifest permission's
-justification under **Privacy practices**, worded from [store/listing.md](store/listing.md)), click **Submit for
-review** there, then rerun the failed job. The rerun sees the version in review and skips the store step, letting the
-GitHub release and the release commit to dev go ahead.
+An AMO upload that fails validation means a listing field or the manifest needs fixing, not the build: fix the
+field the Developer Hub names (**Privacy practices** for a new permission, **Listing** for the summary or
+description), worded from [store/listing.md](store/listing.md), then upload again. A rejected version needs a new
+version number, so bump and rebuild rather than re-uploading the same one.
+
+## The Firefox add-on
+
+`bun run build-for-amo` writes `release/firefox/browse-<version>.zip` (22 files, no pairing code, `browse@opencode.ai`
+as the gecko id, `strict_min_version` 139.0). That zip is what reviewers see and what users install from
+addons.mozilla.org; nothing in it is browser-specific beyond Firefox.
+
+1. Build and check it: `bun run build:firefox`, `bun run lint:firefox` (0 errors expected; warnings are AMO-safe
+   ones) and `bun run build-for-amo`.
+2. Sign it: `web-ext sign --source-dir dist-firefox --artifacts-dir release/firefox/signed --channel listed` with
+   the AMO API key and secret from the Developer Hub (**Tools → Manage API keys**), or upload the zip in the
+   Developer Hub and let AMO sign it. `--channel unlisted` produces a signed `.xpi` for a direct download instead
+   of a store listing; that one installs permanently without developer mode.
+3. Fill the listing from [store/listing.md](store/listing.md) (summary, description, category, permission
+   justifications, privacy policy URL) before the first submission, and again whenever a permission is added.
+4. A version already in review can be cancelled in the Developer Hub; a rejected version needs a new version number,
+   so bump and rebuild rather than re-uploading the same one.
+
+Temporary installs (`about:debugging#/runtime/this-firefox`, or `./setup-full.sh`) need no signing and are how a
+dev build and the end-to-end check are tested. They last until Firefox quits.
 
 ## The security boundary
 
@@ -101,14 +117,15 @@ rulesets below require their review. The jobs that need a secret run in the envi
 
 ## How a dev install gets its extension
 
-The dev zip keeps the manifest `key`, so it loads with the same unpacked ID as a checkout's `dist/`, which the relay
-trusts, and every dev build still publishes it to the release service
-(`https://anoma.ly/release/browse/extension/dev/chromium`). The Rust CLI doesn't fetch it: `browse install` points at
-the Chrome Web Store item on every channel, and the store build works with dev CLIs (the relay keeps accepting older
-extension protocols). To try a dev extension, download the zip, unpack it and load it unpacked, then `browse pair`;
-`browse extension` prints these steps on the dev channel and the README's Updates section has them. (The TypeScript CLI baked the dev zip's sha256 in and unpacked it into
-`<cache root>/extension`; that is gone with it.) Dev builds never go to the Chrome Web Store: every upload is
-reviewed, too slow for a build per push.
+The Firefox add-on is built from the checkout: `bun run build:firefox` writes `dist-firefox/`, and
+`./setup-full.sh --extension-only` builds it and loads it into the profile you pick as a temporary add-on (quit that
+Firefox window first). The relay accepts older add-on protocols, so a dev CLI also works with an older signed add-on.
+Nothing is published to addons.mozilla.org from CI: every upload is reviewed, too slow for a build per push.
+
+`./setup-full.sh` installs and configures the TypeScript CLI in `cli/` (the reference implementation); the released
+Rust binary is what the install script, npm and the store builds run. Setup, `pair`, `status` and `uninstall` behave
+the same in both, while released-binary-only commands (`browse tools`, `browse update --mode`, `browse <tool>`) come
+with the installed binary.
 
 ## The release service
 
@@ -119,7 +136,6 @@ checks the token against `registry/browse.json` there ([scripts/release-registry
 
 | Artifact | Target | File | Latest link |
 | --- | --- | --- | --- |
-| `extension` | `chromium` | `browse-extension-<version>.zip` (the store build on stable, unpacked on dev); `opencode-browser-<version>.zip` on releases before the rename | https://anoma.ly/release/browse/extension/stable/chromium |
 | `cli` | `linux-x64`, `linux-x64-baseline`, `linux-arm64`, `linux-x64-musl`, `linux-x64-baseline-musl`, `linux-arm64-musl` | `opencode-browse-<target>-<version>.tgz` | https://anoma.ly/release/browse/cli/stable/linux-x64 |
 | `cli` | `macos-arm64`, `macos-x64`, `macos-x64-baseline` (files say `darwin-*`) | `opencode-browse-darwin-<arch>-<version>.tgz` | https://anoma.ly/release/browse/cli/stable/macos-arm64 |
 | `cli` | `windows-x64`, `windows-x64-baseline` | `opencode-browse-windows-<arch>-<version>.tgz` | https://anoma.ly/release/browse/cli/stable/windows-x64 |
@@ -147,32 +163,24 @@ older installers: relative `url`s, flat target objects, and `release.version` be
    `v<version>`, but the run's OIDC ref stays `refs/heads/dev`); `plan-release.sh` is what keeps a push to dev from
    publishing stable. Merge and deploy it there **before the next stable release**: until then the service refuses the
    stable channel, and the installer has no stable manifest to read.
-3. **Chrome Web Store item.** The API can't create items, so create it in the
-   [developer dashboard](https://chrome.google.com/webstore/devconsole) with Anomaly's publisher (or reuse
-   `mfnicocicmmlkpjnaffgihfjhdgjkdjg` if it's Anomaly's): upload the zip from `bun run release:check`, fill in the
-   listing from [store/listing.md](store/listing.md), set it **Public**. Then the repository variables (IDs, not
-   secrets): `gh variable set CWS_PUBLISHER_ID --body <id>` and `gh variable set CWS_ITEM_ID --body <id>`.
-4. **Chrome Web Store API.** In an Anomaly Google Cloud project enable the Chrome Web Store API, set the OAuth consent
-   screen to *Internal* (or *External*, **In production**: testing refresh tokens expire in 7 days), and create an
-   OAuth client of type **Desktop app**. The client ID is a repository variable
-   (`gh variable set CWS_CLIENT_ID --body <id>`); the client secret goes to AWS as `browse/release/CWS_CLIENT_SECRET`
-   (`read -rs VALUE && printf %s "$VALUE" | bun set browse release CWS_CLIENT_SECRET`, in
-   [anomalyco/secrets](https://github.com/anomalyco/secrets)). Then run `bun scripts/cws-auth.ts` signed in as the
-   publisher's Google account and pipe the refresh token it prints into
-   `bun set browse release CWS_REFRESH_TOKEN`; nothing goes to disk.
-5. **Environment `release`** (Settings → Environments): *Deployment branches and tags* → *Selected* → branch `dev`
+3. **addons.mozilla.org listing.** In the [AMO Developer Hub](https://addons.mozilla.org/developers/addons) create
+   the add-on (the API can't), choose **On this site** as its distribution, upload
+   `release/firefox/browse-<version>.zip` from `bun run build-for-amo`, fill the listing from
+   [store/listing.md](store/listing.md) and submit it for review. The gecko id `browse@opencode.ai` in
+   `manifest.firefox.json` fixes the add-on's URL. Generate API keys under **Tools → Manage API keys** for signing;
+   keep them with the release secrets, never in the repository.
+4. **Environment `release`** (Settings → Environments): *Deployment branches and tags* → *Selected* → branch `dev`
    only. No required reviewers: who may release is decided by `plan`'s admin/maintain check and the rulesets. It holds
-   no secrets: it is the environment claim the AWS role's trust requires ([Secrets](#secrets)). Delete the old `npm`,
-   `chrome-web-store`, `release-dev`, `npm-dev` and `chrome-web-store-dev` environments.
-6. **Release deploy key.** `ssh-keygen -t ed25519 -N "" -C "browse release tags" -f release-tag-key`; add
+   no secrets: it is the environment claim the AWS role's trust requires ([Secrets](#secrets)).
+5. **Release deploy key.** `ssh-keygen -t ed25519 -N "" -C "browse release tags" -f release-tag-key`; add
    `release-tag-key.pub` under Settings → Deploy keys with write access, store the private key as
    `browse/release/RELEASE_TAG_KEY` (`bun set browse release RELEASE_TAG_KEY < release-tag-key`), and delete both files.
-7. **Rulesets** (Settings → Rules):
+6. **Rulesets** (Settings → Rules):
    - branch `dev`: require a pull request with code owner review, block force pushes and deletion; bypass:
      *Repository admin* and *Deploy keys* (the release commit comes back to dev with the deploy key).
    - tags `v*`: restrict creation, updates and deletion; bypass: *Repository admin* and *Deploy keys* (the tag job).
-8. **Actions** (Settings → Actions → General): require actions pinned to a full-length commit SHA.
-9. **npm.** Every package publishes with trusted publishing: `@opencode/browse` and each `@opencode/browse-<target>`
+7. **Actions** (Settings → Actions → General): require actions pinned to a full-length commit SHA.
+8. **npm.** Every package publishes with trusted publishing: `@opencode/browse` and each `@opencode/browse-<target>`
    trust GitHub Actions in `anomalyco/browse`, workflow `release.yml`. There is no npm token anywhere.
 
    The eleven platform packages are set up already (November 2026): trusted publishing can only be configured on a
@@ -185,7 +193,7 @@ older installers: relative `url`s, flat target objects, and `release.version` be
    ```
 
    `npm trust list @opencode/browse-<target>` checks one.
-10. **macOS signing (optional).** Without it the macOS binaries carry the ad-hoc signature the Rust linker gives
+9. **macOS signing (optional).** Without it the macOS binaries carry the ad-hoc signature the Rust linker gives
     them, which runs fine from the install script and npm (neither sets quarantine). To sign with a Developer ID:
     the certificate is `shared/APPLE_SIGNING_CERTIFICATE` in AWS (a Developer ID Application certificate exported
     without a password, base64 encoded, shared with every Anomaly app); then `gh variable set MACOS_SIGNING --body true`
@@ -203,25 +211,24 @@ publishing).
 | Secret | Use |
 | --- | --- |
 | `browse/release/RELEASE_TAG_KEY` | the release deploy key: `tag` pushes `v<version>`, `push-release-to-dev` pushes the release commit |
-| `browse/release/CWS_CLIENT_SECRET`, `browse/release/CWS_REFRESH_TOKEN`, var `CWS_CLIENT_ID` | the Chrome Web Store API (`publish-cws`) |
+| `browse/release/AMO_API_KEY`, `browse/release/AMO_API_SECRET` | `web-ext sign` for the Firefox add-on (also used by hand; addons.mozilla.org's Developer Hub rotates them) |
 | `shared/APPLE_SIGNING_CERTIFICATE` | `sign-macos`, when the repository variable `MACOS_SIGNING` is true |
-
-The Chrome Web Store ids are repository variables, not secrets: `CWS_CLIENT_ID`, `CWS_PUBLISHER_ID` and `CWS_ITEM_ID`.
 
 ## Undoing a bad release
 
 - **npm.** npm users move forward, so release a fixed patch. `npm deprecate @opencode/browse@<bad> "<why>"`
   warns new installs; a user can rerun the installer with `--version <good>` (which installs from npm) to go back.
-- **Chrome Web Store.** Roll back in the dashboard ([how](https://developer.chrome.com/docs/webstore/rollback)), or
-  cancel a pending review.
+- **Firefox add-on.** Upload a fixed version; AMO doesn't let a version be replaced once it is public, so bump it.
+  A version still in review can be cancelled in the Developer Hub, and an unlisted build can simply be replaced
+  locally by the older signed `.xpi`.
 - **Release service.** Binary installs follow the channel's current release: `promote` an earlier release with
   `client.sh action ... --action promote` (anomalyco/release docs/publishing.md), or publish a fixed patch. Because
   versions are never ordered, promoting the earlier one is a rollback even though its version is lower.
 
 ## Compatibility between the extension and the CLI
 
-The store extension and the CLI update independently, so either can be ahead for an hour or so; a dev install's
-extension moves with its CLI. The relay accepts extension protocols from `minExtensionProtocolVersion` to
+The add-on and the CLI update independently, so either can be ahead for an hour or so; a dev install's add-on moves
+with its CLI. The relay accepts extension protocols from `minExtensionProtocolVersion` to
 `extensionProtocolVersion` (`cli/src/protocol.ts`). Bump `extensionProtocolVersion` only for a change an older relay
 can't handle, and raise the minimum only when dropping older extensions. When they don't match, the status page,
 `status` and tool errors name the side that's behind.

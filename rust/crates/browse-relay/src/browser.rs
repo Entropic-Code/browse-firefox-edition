@@ -270,6 +270,7 @@ impl Relay {
                 let distribution = match origin.as_deref() {
                     Some(o) if o == protocol::stable_unpacked_origin() => Some("unpacked"),
                     Some(o) if o == format!("chrome-extension://{}", protocol::store_id()) => Some("store"),
+                    Some(o) if o.starts_with("moz-extension://") => Some("firefox"),
                     _ => None,
                 };
                 Some(protocol::advice(version, distribution))
@@ -283,7 +284,7 @@ impl Relay {
             }
             "paired-offline" => Some("The paired browser isn't connected right now: open it (the profile with browse) and check that the extension is turned on. It reconnects by itself.".into()),
             _ => Some(format!(
-                "No browser has connected to browse yet. Add the browse extension from https://chromewebstore.google.com/detail/{} (if it's already added, open that browser), then run `browse install` to pair it, or `browse pair` for a code to enter in the extension.",
+                "No browser has connected to browse yet. Add the browse extension from https://chromewebstore.google.com/detail/{} or the Firefox add-on (if it's already added, open that browser), then run `browse install` to pair it, or `browse pair` for a code to enter in the extension.",
                 protocol::store_id()
             )),
         };

@@ -113,6 +113,13 @@ async function seed(home: string, options: {
   }
 }
 
+/** The relay has processed the extension's `ready` once it reports the browser connected. */
+async function connected(port: number, token: string) {
+  const response = await fetch(`http://127.0.0.1:${port}/extension/status`, { headers: { authorization: `Bearer ${token}` } }).catch(() => undefined)
+  if (!response?.ok) return false
+  return ((await response.json()) as { connected?: boolean }).connected === true
+}
+
 async function owners(port: number, token: string) {
   const response = await fetch(`http://127.0.0.1:${port}/json/list`, { headers: { authorization: `Bearer ${token}` } })
   return (await response.json()) as Array<{ tabId: number; title?: string; url?: string; opencodeBrowserSessionId?: string }>
@@ -524,8 +531,10 @@ test("a toolbar lend of a restored default page clears the sandbox so the next e
     }
     expect(await waitFor(targetGone)).toBe(true)
     replacement.sendReady()
+    expect(await waitFor(() => connected(started.port, started.token))).toBe(true)
     const creates = replacement.commands.filter((command) => command.method === "tabs.create").length
-    expect((await executeSession(started.port, started.token, "lend-default", "return page.url()")).isError).toBe(false)
+    const executed = await executeSession(started.port, started.token, "lend-default", "return page.url()")
+    expect(executed).toMatchObject({ isError: false })
     expect(replacement.commands.filter((command) => command.method === "tabs.create").length).toBeGreaterThan(creates)
   } finally {
     replacement?.close()

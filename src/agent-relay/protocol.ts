@@ -58,6 +58,9 @@ const commandMethods = [
   "relay.settings",
   "settings.get",
   "settings.set",
+  "page.navigate",
+  "page.read",
+  "page.screenshot",
 ] as const
 
 export type ExtensionCommand = {

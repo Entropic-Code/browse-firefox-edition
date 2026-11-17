@@ -2,7 +2,7 @@ import type { JsonObject } from "../../agent-relay/protocol"
 import { AgentWindow } from "./window"
 import { TabCleanup } from "../tab-cleanup"
 import { TabIdentity } from "../tab-identity"
-import { text, type AgentRelayLog } from "./wire"
+import { inTabGroup, tabGroupsAvailable, text, type AgentRelayLog } from "./wire"
 
 export function installPopupAdoption(deps: {
   readonly log: AgentRelayLog
@@ -71,7 +71,8 @@ export function installPopupAdoption(deps: {
     if (
       current &&
       openerTab &&
-      openerTab.groupId !== chrome.tabGroups.TAB_GROUP_ID_NONE &&
+      tabGroupsAvailable() &&
+      inTabGroup(openerTab) &&
       openerTab.windowId === current.windowId &&
       current.groupId !== openerTab.groupId
     )

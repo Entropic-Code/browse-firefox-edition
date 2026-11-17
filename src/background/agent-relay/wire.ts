@@ -1,4 +1,6 @@
+import { extensionCapabilityTabRelease } from "../../../cli/src/protocol"
 import { isJsonObject, type JsonObject } from "../../agent-relay/protocol"
+import { isFirefox } from "../../shared/browser"
 import { autoUpdateMode, BROWSER_NAME_KEY, relayInstallMethods, type RelayAutoUpdate, type RelayUpdateFailure } from "../../shared/protocol"
 import type { createAgentRelayLog } from "./log"
 import type { ecdhKeyPair, PairingCode } from "../pairing"
@@ -92,8 +94,21 @@ export const CLOSE_CODES: Record<number, string> = {
   4006: "pairing failed",
 }
 
-/** The browser's own name for the relay to name it by: Chrome, Edge, Brave, Opera or Chromium. */
+export const extensionCapabilityNativePage = "native-page"
+
+export function relayCapabilities(): string[] {
+  return isFirefox() ? [extensionCapabilityTabRelease, extensionCapabilityNativePage] : [extensionCapabilityTabRelease]
+}
+
+export const tabGroupsAvailable = () => typeof chrome.tabGroups?.get === "function" && typeof chrome.tabs?.group === "function"
+
+export const tabGroupNone = () => chrome.tabGroups?.TAB_GROUP_ID_NONE ?? -1
+
+export const inTabGroup = (tab: chrome.tabs.Tab) => tab.groupId !== undefined && tab.groupId !== tabGroupNone()
+
+/** The browser's own name for the relay to name it by: Firefox, Chrome, Edge, Brave, Opera or Chromium. */
 export function browserBrand(): string {
+  if (isFirefox()) return "Firefox"
   const brands = (navigator as Navigator & { userAgentData?: { brands?: { brand: string }[] } }).userAgentData?.brands?.map((entry) => entry.brand) ?? []
   const known: [string, string][] = [["Microsoft Edge", "Edge"], ["Brave", "Brave"], ["Opera", "Opera"], ["Google Chrome", "Chrome"], ["Chromium", "Chromium"]]
   return known.find(([brand]) => brands.includes(brand))?.[1] ?? "Chrome"
@@ -156,6 +171,26 @@ export function sharedTitle(count: number) {
 
 export function sharedGroup(title: string | undefined) {
   return !!title?.endsWith(SHARED_MARKER)
+}
+
+export async function notificationPermission(): Promise<"granted" | "denied"> {
+  const api = chrome.notifications as unknown as { getPermissionLevel?: () => Promise<"granted" | "denied"> }
+  if (typeof api.getPermissionLevel !== "function") return "granted"
+  return api.getPermissionLevel().catch(() => "denied" as const)
+}
+
+export function browseNotification(options: { iconUrl: string; title: string; message: string; detail?: string }) {
+  const { iconUrl, title, message, detail } = options
+  if (isFirefox()) return { type: "basic" as const, iconUrl, title, message: detail ? `${message}\n${detail}` : message }
+  return {
+    type: "basic" as const,
+    iconUrl,
+    title,
+    message,
+    ...(detail ? { contextMessage: detail } : {}),
+    requireInteraction: true,
+    priority: 2,
+  }
 }
 
 export function sleep(ms: number) {

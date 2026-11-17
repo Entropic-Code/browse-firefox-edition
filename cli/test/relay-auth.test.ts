@@ -88,6 +88,10 @@ describe("Host, Origin and Sec-Fetch-Site checks", () => {
     // The store ID earlier builds hard-coded is accepted only once a release configures it.
     expect(validateWebSocketOrigin({ origin: "chrome-extension://mfnicocicmmlkpjnaffgihfjhdgjkdjg", requireChromeExtension: true })).toBeDefined()
     expect(validateWebSocketOrigin({ origin: "chrome-extension://aaaabbbbccccddddeeeeffffgggghhhh", requireChromeExtension: true })).toBeDefined()
+    expect(validateWebSocketOrigin({ origin: "moz-extension://0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b", requireChromeExtension: true })).toBeUndefined()
+    expect(validateWebSocketOrigin({ origin: "moz-extension://0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b/" , requireChromeExtension: true })).toBeDefined()
+    expect(validateWebSocketOrigin({ origin: "moz-extension://not-a-uuid", requireChromeExtension: true })).toBeDefined()
+    expect(validateWebSocketOrigin({ origin: "moz-extension://0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b" })).toBeDefined()
     expect(validateWebSocketOrigin({ origin: undefined, requireChromeExtension: true })).toBeDefined()
     expect(validateWebSocketOrigin({ origin: "https://evil.test" })).toBeDefined()
     // CDP clients outside a browser (Playwright, the CLI) send no Origin; they carry the token instead.

@@ -1,5 +1,6 @@
 export * as AgentGroups from "./groups"
 import { AGENT_GROUPING_KEY, agentGrouping, type AgentGrouping } from "../../shared/protocol"
+import { inTabGroup, tabGroupsAvailable } from "./wire"
 
 // Agent tab groups stay out of the way: at the start of the tab strip, right after pinned tabs (the top of a
 // vertical strip), and
@@ -29,13 +30,14 @@ export function keepOpenWhile(check: (tabId: number) => boolean) {
 }
 
 async function needed(groupId: number) {
-  if (!keepers.length) return false
+  if (!keepers.length || !tabGroupsAvailable()) return false
   const tabs = await chrome.tabs.query({ groupId }).catch(() => [])
   return tabs.some((tab) => tab.id !== undefined && keepers.some((check) => check(tab.id!)))
 }
 
 /** Registers a group an agent owns, moves it to the start of the strip, and collapses it unless the user is on one of its tabs. */
 export async function adopt(groupId: number) {
+  if (!tabGroupsAvailable()) return
   await restore()
   if (!groups.has(groupId)) {
     groups.add(groupId)
@@ -51,6 +53,7 @@ export async function adopt(groupId: number) {
  * strip), keeping their order among themselves.
  */
 async function keepFirst(windowId: number) {
+  if (!tabGroupsAvailable()) return
   const tabs = await chrome.tabs.query({ windowId }).catch(() => [] as chrome.tabs.Tab[])
   const pinned = tabs.filter((tab) => tab.pinned).length
   const order: number[] = []
@@ -86,17 +89,20 @@ async function expand(groupId: number) {
 
 /** Expands the agent group holding a tab, if any. */
 export async function expandTab(tabId: number) {
+  if (!tabGroupsAvailable()) return
   const tab = await chrome.tabs.get(tabId).catch(() => undefined)
-  if (tab && tab.groupId !== chrome.tabGroups.TAB_GROUP_ID_NONE && groups.has(tab.groupId)) await expand(tab.groupId)
+  if (tab && inTabGroup(tab) && groups.has(tab.groupId)) await expand(tab.groupId)
 }
 
 /** Folds the agent group holding a tab back up once it's no longer needed (unless the user is on it). */
 export async function settleTab(tabId: number) {
+  if (!tabGroupsAvailable()) return
   const tab = await chrome.tabs.get(tabId).catch(() => undefined)
-  if (tab && tab.groupId !== chrome.tabGroups.TAB_GROUP_ID_NONE && groups.has(tab.groupId)) await collapseUnlessActive(tab.groupId)
+  if (tab && inTabGroup(tab) && groups.has(tab.groupId)) await collapseUnlessActive(tab.groupId)
 }
 
 async function collapseUnlessActive(groupId: number) {
+  if (!tabGroupsAvailable()) return
   const group = await chrome.tabGroups.get(groupId).catch(() => undefined)
   if (!group) {
     forget(groupId)
@@ -125,6 +131,7 @@ function save() {
 
 // The user moved to another tab: fold away every agent group in that window that doesn't hold it.
 chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
+  if (!tabGroupsAvailable()) return
   void restore().then(async () => {
     const tab = await chrome.tabs.get(tabId).catch(() => undefined)
     for (const groupId of groups) {
@@ -136,7 +143,7 @@ chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
     }
   })
 })
-chrome.tabGroups.onRemoved.addListener((group) => forget(group.id))
+chrome.tabGroups?.onRemoved?.addListener((group) => forget(group.id))
 // Group ids don't survive a browser restart.
 chrome.runtime.onStartup.addListener(() => {
   groups.clear()

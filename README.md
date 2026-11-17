@@ -4,24 +4,46 @@
 </picture>
 
 Let your AI agents use your real browser: your tabs, your logins, your extensions. A small native MCP server and a
-Chromium extension, for [OpenCode](https://opencode.ai), Claude Code, Codex, Cursor and any other MCP client.
+Firefox add-on, for [OpenCode](https://opencode.ai), Claude Code, Codex, Cursor and any other MCP client.
 
 ---
 
-Agents get a `browse` MCP server. They open tabs in the background, read pages, click, type, take screenshots,
-capture network traffic and record the screen, in tabs grouped out of your way. When it's your turn (a login, a 2FA
-prompt, a payment), they hand the tab back to you and continue once you click **Continue**.
+Agents get a `browse` MCP server. Where a page driver is available they open tabs in the background, read pages,
+click, type, take screenshots, capture network traffic and record the screen, in tabs grouped out of your way. When
+it's your turn (a login, a 2FA prompt, a payment), they hand the tab back to you and continue once you click
+**Continue**.
 
-It works in Chrome, Edge, Brave, Arc, Helium, Vivaldi, Opera and Chromium.
+This edition runs in **Firefox 139 or newer**. Firefox has no debugger API and no CDP since Firefox 141, so the add-on
+pairs, reports status, groups agent tabs and shows handoffs, and answers page commands at once with a message saying
+the Firefox-native driver isn't in this build yet — it never hangs.
 
 ## Install
+
+### Quick Start
+
+```sh
+./setup-full.sh
+```
+
+It installs or updates the CLI and MCP server from this checkout's `cli/`, adds browse to your agents, builds the
+Firefox add-on and asks which Firefox profile to load it into, then loads it there and opens its setup page. Re-run it to update everything;
+`--extension-only` skips the CLI/agent step, `--project-only` skips the add-on, and `--profile <name>` skips the
+picker. Quit Firefox first: an add-on can only be loaded into a profile that isn't running, and it lasts until you
+quit Firefox again.
+
+Then restart your agent (or reload its MCP servers), run `browse pair`, and enter the code on the page Firefox opened
+with the add-on.
+
+### Published builds
 
 ```sh
 curl -fsSL https://opencode.ai/browse/install | bash
 ```
 
-Or paste this into your agent: *"Set up browse so you can use my Chrome: run
-`curl -fsSL https://opencode.ai/browse/install | bash`"*. It sets browse up for the agent that ran it.
+Or paste this into your agent: *"Set up browse so you can use my Firefox: run
+`curl -fsSL https://opencode.ai/browse/install | bash`"*. It sets browse up for the agent that ran it but installs no
+Firefox add-on: run `./setup-full.sh` here to build and load one, or `bun run build:firefox` and load
+`dist-firefox/manifest.json` in `about:debugging#/runtime/this-firefox` yourself. Then run `browse pair`.
 
 Other ways to install, all of which end in the same `browse install`:
 
@@ -52,9 +74,10 @@ launcher (Node 22+) that runs the native binary npm installed for your platform.
    computer start checked (your last choice next time). Type to search all supported agents, ↑/↓ to move, Space or Tab
    to toggle, Enter to confirm. An agent running `browse install` sets up itself. Without a terminal OpenCode is the
    default. Edits keep the comments and formatting of each agent's config.
-3. **Connects the extension.** If no browser has browse yet, install opens it in the Chrome Web Store; add it, and
-   install pairs it once it's there. If a browser already has it, install opens its setup page with a one-time pairing
-   code in the link, so it pairs without copying anything. Over SSH or without a display it prints a code instead.
+3. **Connects the add-on.** Load the Firefox add-on first (`./setup-full.sh` does it for you, or use
+   `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** and pick `dist-firefox/manifest.json`). If a
+   browser already has it, install opens its setup page with a one-time pairing code in the link, so it pairs without
+   copying anything. Over SSH or without a display it prints a code instead.
 
 Then ask your agent to *"open news.ycombinator.com and tell me the top story"*. An agent that was already running
 needs a restart (or an MCP reload) to load browse.
@@ -120,10 +143,11 @@ leaves servers named browse that it didn't write alone.
 ### Pairing
 
 There's nothing to sign in to. Each browser pairs with browse once and gets a key of its own (see
-[Security](#security)). If pairing didn't happen by itself, run `browse install` again, or run `browse pair`: it
-prints a one-time code (`XXXX-XXXX`, good for 10 minutes) and waits. Open **Extensions → browse → Options**, expand
-**advanced** (or click **Pair with a code**), enter the code under **Pairing code** and click **Connect**. `browse pair
---list` shows paired browsers; `browse pair --revoke <browser>` unpairs one.
+[Security](#security)). If pairing didn't happen by itself, run `browse pair`: it prints a one-time code (`XXXX-XXXX`,
+good for 10 minutes) and waits. In Firefox open the add-on's options page — **about:addons → browse → Preferences**,
+or the setup page the add-on opened — expand **advanced** (or click **Pair with a code**), enter the code under
+**Pairing code** and click **Connect**. `browse pair --list` shows paired browsers; `browse pair --revoke <browser>`
+unpairs one.
 
 ### Browser on another computer
 
@@ -155,13 +179,14 @@ working with the newer relay until the agent restarts it. `browse update` update
 looks. Choose **Tell me** or **Off** under **updates** on the extension's options page, or run `browse update --mode
 notify|off` (`OPENCODE_BROWSER_AUTO_UPDATE=off` in the environment overrides both). To go back, rerun the install
 script with `--channel <channel>` or `--version <version>`, or install `@opencode/browse@<version>` with your package
-manager. The Chrome Web Store updates the extension.
+manager. A signed Firefox add-on updates from addons.mozilla.org; a temporary one is replaced by quitting Firefox and
+running `./setup-full.sh --extension-only` again.
 
 **Dev builds**: every push to `dev` publishes one: `curl -fsSL https://opencode.ai/browse/install | bash -s --
---channel dev`, or `npx @opencode/browse@dev install`. The store extension works with dev builds. To try the dev
-extension too, download https://anoma.ly/release/browse/extension/dev/chromium, unzip it, turn on **Developer mode** on
-your browser's extensions page, click **Load unpacked**, pick the folder and run `browse pair` (`browse extension`
-prints these steps on the dev channel). Remove the store extension first so only one browse runs in that profile.
+--channel dev`, or `npx @opencode/browse@dev install`. Dev CLIs work with the Firefox add-on. To build the add-on from
+a checkout, run `bun run build:firefox` and load `dist-firefox/manifest.json` from
+`about:debugging#/runtime/this-firefox` (or let `./setup-full.sh --extension-only` do it), then `browse pair`. Remove
+any other copy of the add-on first so only one browse runs in that profile.
 
 ### Uninstall
 
@@ -175,6 +200,11 @@ manager: uninstall prints the command (`npm rm -g @opencode/browse`, `bun remove
 extension from your browser to finish.
 
 ## Using it
+
+In the Firefox build, `browse page goto <url>`, `browse page read` and `browse page screenshot` drive a tab through
+the add-on's own Firefox-native driver, and lending a tab attaches. The tools in the next section (`snapshot` refs,
+clicking, typing, `execute`, capture) go through CDP, which Firefox doesn't have, so they don't work in Firefox yet;
+`status` and `settings` work.
 
 - **Tabs are the handle.** `navigate` without a `tab` opens a new background tab and returns its id; every other call
   passes that `tab`. Agents use the tab ids they opened or were given, and leave other tabs alone unless you ask.
@@ -193,11 +223,11 @@ extension from your browser to finish.
   when it starts again (after an update, say).
 - **Hand an agent one of your tabs** by clicking the toolbar button on it. The badge shows **ON**; click again to take
   it back. While an agent works the badge reads **RUN**, and **WAIT** when it needs you. The button always works: a
-  click while an agent runs takes the tab back. The browser's debugging bar (**Cancel**) disconnects browse from every
-  tab. Chrome's own pages, the Web Store included, can't be lent.
+  click while an agent runs takes the tab back. Firefox's own pages (about:addons, other add-ons' pages) can't be
+  lent.
 - **Handoffs:** the page shows a small card with the site's origin. Do the human part, then click **Continue** on the
   card or the toolbar button. While a tab is recorded you get a system notification instead of the card.
-- **Several browsers at once.** Each connected browser has an id (like `chrome-macbook`); `status` lists them, and new
+- **Several browsers at once.** Each connected browser has an id (like `firefox-laptop`); `status` lists them, and new
   tabs open in the default browser unless `browser` names another.
 - **Settings** (the extension's options page, applied right away): where agent tabs open (your window or their own),
   grouping (one shared group, one per task, or none), when idle tabs close (10, 30, 60 minutes or never), human-like
@@ -207,7 +237,9 @@ extension from your browser to finish.
 
 OpenCode, which composes tools in code mode, gets the plain tools. Every other MCP client gets `execute`, `status` and
 `tabs`; `execute` runs JavaScript that can call all of them. The relay decides by the client's name
-(`OPENCODE_BROWSER_TOOLS=plain|execute|all` on the relay overrides it).
+(`OPENCODE_BROWSER_TOOLS=plain|execute|all` on the relay overrides it). On Firefox, `browse page goto|read|screenshot`
+drive a page through the add-on's native driver; `navigate`, `snapshot`, `click`, `execute` and the other tools above
+need CDP, which Firefox doesn't provide, so they don't work there. `status` and `settings` do not need it.
 
 | Tool | What it does |
 | --- | --- |
@@ -224,9 +256,11 @@ OpenCode, which composes tools in code mode, gets the plain tools. Every other M
 | `settings`, `status` | Read or change your settings when you ask; the relay, browsers, pairing state and what to do next |
 | `execute` | For other clients: JavaScript with a Playwright-style `page`, `snapshot()`, `ref()`, `handoff()`, `state` and `browse.<tool>()`. Each result starts with the tab it ended in, to pass back as `tab` |
 
-Everything is a CLI too: `browse navigate https://example.com` prints the new tab's id, then `browse snapshot --tab
-<id>`, `browse click e12 --tab <id>`, `browse execute --file script.js`. `browse tools` lists them and `browse <tool>
---help` shows a tool's options.
+Everything is a CLI too in the released binary: `browse navigate https://example.com` prints the new tab's id, then
+`browse snapshot --tab <id>`, `browse click e12 --tab <id>`, `browse execute --file script.js`. `browse tools` lists
+them and `browse <tool> --help` shows a tool's options. A checkout's `./setup-full.sh` configures the TypeScript
+reference CLI in `cli/` instead: setup, `pair`, `status` and `uninstall` are the same there, but `browse tools`,
+`browse execute --file` and `browse <tool>` need the released `browse` from the install script or npm.
 
 ## How it works
 
@@ -236,24 +270,27 @@ Everything is a CLI too: `browse navigate https://example.com` prints the new ta
 </picture>
 
 The agent starts `browse mcp`, a small stdio proxy, which starts the relay on demand and forwards each call to it on
-`127.0.0.1:19988` (or the next free port from 19990–19997 when another program holds it). The extension connects to
-the relay over a WebSocket and runs its commands in your browser through `chrome.debugger`.
+`127.0.0.1:19988` (or the next free port from 19990–19997 when another program holds it). The add-on connects to the
+relay over a WebSocket and authenticates with the key it got when you paired it.
 
-- **The relay** (`browse serve`, in `rust/`) keeps agent tabs, handoffs, recordings and network captures, talks the
-  Chrome DevTools Protocol to each tab, and runs `execute` scripts in an embedded JavaScript engine (QuickJS). It
-  exits when nothing uses it.
-- **The extension** (`src/`) runs the relay's commands through `chrome.debugger`, keeps agent tabs in collapsed groups
-  (or their own window), closes idle ones, and shows the toolbar badge and the handoff card.
-- **Quiet in the page.** browse doesn't enable the CDP domains pages can detect, runs its own code in isolated worlds
-  and leaves no globals behind. Input moves like a person: curved mouse paths, paced typing, gliding scroll (turn
-  *Human-like input* off for full speed). This makes an agent hard to spot, not impossible: the browser shows its
-  "started debugging" bar while the debugger is attached.
+- **The relay** (`browse serve`, in `rust/`) keeps agent tabs, handoffs, recordings and network captures, serves the
+  tool API to the MCP server, and runs `execute` scripts in an embedded JavaScript engine (QuickJS). It exits when
+  nothing uses it.
+- **The add-on** (`src/`) keeps agent tabs in collapsed groups (or their own window), closes idle ones, shows the
+  toolbar badge and the handoff card, and reports status. Firefox has no debugger API, and removed CDP in Firefox
+  141, so page commands are answered with a precise "needs the Firefox-native driver" error instead of being driven;
+  everything else works.
+- **Quiet in the page.** The page script runs only in the tabs agents use, adds a handoff card there and leaves no
+  globals behind. When the Firefox-native driver lands it keeps the same rules: no CDP domains pages can detect,
+  isolated worlds, and human-like input (curved mouse paths, paced typing, gliding scroll; turn *Human-like input*
+off for full speed).
 
-Permissions: `debugger`, `tabs`, `tabGroups`, `storage`, `sessions` (to keep an agent tab's id on the tab, so it
-survives a browser restart), `alarms`, `scripting` (to add the handoff card only to tabs agents use), `webNavigation`
-(to keep popups agents open with their other tabs), `notifications` (to tell you an agent needs you while it records
-a tab), and access to all sites so agents can work wherever you ask. Nothing leaves your
-computer except what your agent sends to its model provider; see the [privacy policy](store/privacy-policy.md).
+Permissions: `tabs`, `tabGroups`, `storage`, `sessions` (to keep an agent tab's id on the tab, so it survives a
+browser restart), `alarms`, `scripting` (to add the handoff card only to tabs agents use), `webNavigation` (to keep
+popups agents open with their other tabs), `notifications` (to tell you an agent needs you), `management` (to tell a
+loaded-from-disk build from a signed one), and access to all sites so agents can work wherever you ask. There is no
+`debugger` permission: Firefox has no such API. Nothing leaves your computer except what your agent sends to its model
+provider; see the [privacy policy](store/privacy-policy.md).
 
 ## Security
 
@@ -330,6 +367,36 @@ cd rust && cargo test --workspace && cargo run -p browse -- status
 
 A build from a checkout (`cargo run -p browse -- install`) is used in place and never updates itself. The extension in
 `dist/` keeps the manifest key, so it loads with the unpacked ID the relay trusts; run `browse pair` to pair it.
+
+### Firefox
+
+Firefox has no debugger API, and no CDP since Firefox 141, so the Firefox build pairs, reports status
+and groups tabs but can't drive pages yet: agent page tools fail at once with a message saying so. It needs Firefox
+139 or newer: `tabs.group`/`tabs.ungroup` arrived in 138, but the `tabGroups` API that
+`src/background/agent-relay/{groups,grouping}.ts` call (`get`, `update`, `move`, `query`) arrived in 139. That is the
+`strict_min_version` in `manifest.firefox.json` and the `firefox139` target in both vite configs.
+
+```sh
+./setup-full.sh            # install everything and load the add-on into a profile you pick
+bun run build:firefox      # writes dist-firefox/
+bun run dev:firefox        # rebuilds dist-firefox/ on change
+bun run lint:firefox       # web-ext lint
+bun run build-for-amo      # zips dist-firefox under release/firefox for addons.mozilla.org
+```
+
+`./setup-full.sh` builds the add-on, asks which Firefox profile to load it into and does it through the browser's own
+`AddonManager`, then clears the temporary debugger prefs it used. To do it by hand, open
+`about:debugging#/runtime/this-firefox`, click **Load Temporary Add-on** and pick `dist-firefox/manifest.json`, then
+run `browse pair` and enter the code on the add-on's options page.
+
+The Firefox manifest sets its own `content_security_policy`: Firefox's Manifest V3 default adds
+`upgrade-insecure-requests`, which would rewrite the relay's `ws://127.0.0.1` link to `wss://` and break it.
+
+`bun run check:firefox` is the end-to-end check: it installs the build in a headless Firefox, pairs it through
+`browse pair`, reads the add-on's own pages and diagnostics, then drives a page through the native driver (navigate,
+read, screenshot) and lends the tab, checking that the attach succeeds. Run it with the relay up and pass the code it prints: `browse pair` then
+`bun run check:firefox -- --code XXXX-XXXX`. `--pair form` (the default) submits that code through the settings page's
+own "Pair with a code" form; `--pair file` uses the unpacked build's `relay-pairing.json` instead.
 [RELEASING.md](RELEASING.md) has the release flow (dev builds from every push to `dev`; stable releases only from the
 Release workflow in GitHub Actions), and [rust/PLAN.md](rust/PLAN.md) the layout of the Rust crates. `cli/` is the
 earlier TypeScript implementation, kept as a reference.

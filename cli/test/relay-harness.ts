@@ -152,17 +152,28 @@ export function cdpCall(socket: WebSocket, id: number, method: string, params: R
 
 /** Starts a relay from source on a free port with the given data root and extra environment; resolves once it answers. */
 export async function startRelay(root: string, env: Record<string, string> = {}, reusePort?: number) {
-  const relayPort = reusePort ?? await freePort()
-  const child = spawn(process.execPath, [path.join(import.meta.dir, "../src/main.ts"), "serve"], {
-    env: { PATH: process.env.PATH ?? "", HOME: root, OPENCODE_BROWSER_HOME: root, OPENCODE_BROWSER_PORT: String(relayPort), OPENCODE_BROWSER_UPDATE_CHECK: "0", ...env },
-    stdio: "ignore",
-  })
-  for (let attempt = 0; attempt < 100; attempt++) {
-    const ready = await fetch(`http://127.0.0.1:${relayPort}/version`).then((response) => response.ok, () => false)
-    if (ready) break
-    await Bun.sleep(100)
+  let child: ChildProcess | undefined
+  let relayPort = reusePort ?? await freePort()
+  // Parallel test files pick ports from the same range, and a restart reuses the port the previous relay held: either
+  // can lose a race, and the relay then exits instead of listening. Retry rather than hand back a port nothing serves.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      await Bun.sleep(200)
+      if (reusePort === undefined) relayPort = await freePort()
+    }
+    child = spawn(process.execPath, [path.join(import.meta.dir, "../src/main.ts"), "serve"], {
+      env: { PATH: process.env.PATH ?? "", HOME: root, OPENCODE_BROWSER_HOME: root, OPENCODE_BROWSER_PORT: String(relayPort), OPENCODE_BROWSER_UPDATE_CHECK: "0", ...env },
+      stdio: "ignore",
+    })
+    for (let probe = 0; probe < 150; probe++) {
+      if (child.exitCode !== null) break
+      const ready = await fetch(`http://127.0.0.1:${relayPort}/version`).then((response) => response.ok, () => false)
+      if (ready) return { child, port: relayPort, token: relayToken(root) }
+      await Bun.sleep(100)
+    }
+    child.kill("SIGKILL")
   }
-  return { child, port: relayPort, token: relayToken(root) }
+  throw new Error(`relay did not start on 127.0.0.1:${relayPort}${child?.exitCode === null || child === undefined ? "" : ` (exit ${child.exitCode})`}`)
 }
 
 export async function stopRelay(child: ChildProcess | undefined) {

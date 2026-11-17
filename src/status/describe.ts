@@ -2,6 +2,7 @@
 // backticks shows as code.
 import { cliUpdateCommand, type AgentRelayState, type CliUpdateNotice, type ToStatusPage } from "../shared/protocol"
 import { unpackedReloadAdvice } from "../../cli/src/protocol"
+import { isFirefox } from "../shared/browser"
 import { installCommand } from "./install"
 
 export type RelayResult = Extract<ToStatusPage, { type: "relay.result" }>
@@ -50,8 +51,12 @@ export function describeStatus(state: AgentRelayState, unpacked: boolean) {
     return `This extension is newer than the browse CLI on this computer. Update the CLI: run \`${state.autoUpdate ? cliUpdateCommand(state.autoUpdate) : installCommand}\` (with automatic updates on, it catches up by itself within a day), then click Reconnect.`
   if (state.status === "incompatible" && state.skew === "update-extension")
     return state.unpacked || unpacked
-      ? unpackedReloadAdvice
-      : "This extension is older than the browse CLI on this computer. Chrome updates it within a few hours; to update now, open chrome://extensions, turn on Developer mode and click Update."
+      ? isFirefox()
+        ? "Reload browse in about:debugging (Reload) or restart Firefox."
+        : unpackedReloadAdvice
+      : isFirefox()
+        ? "This add-on is older than the browse CLI on this computer. Firefox updates add-ons from addons.mozilla.org; to update now, open about:addons and click Check for updates."
+        : "This extension is older than the browse CLI on this computer. Chrome updates it within a few hours; to update now, open chrome://extensions, turn on Developer mode and click Update."
   if (state.status === "incompatible") return "This extension and the installed CLI don't match. Run the install command again, then click Reconnect."
   if (state.status === "unpaired")
     return "Not paired yet. Run the install command from the setup page, or enter a pairing code under Advanced; until then no agent can use this browser."

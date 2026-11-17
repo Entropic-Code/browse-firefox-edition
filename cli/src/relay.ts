@@ -834,6 +834,36 @@ const makeRelay = Effect.fnUntraced(function* (options: {
     reloadExtension: () => sendToEach({ method: "runtime.reload" }),
     revokeBrowser: (key) => handshake.revokeBrowser(key),
     cleanupTabs,
+    pageDrive: (request) => {
+      const action = typeof request.action === "string" ? request.action : undefined
+      const tabId = typeof request.tabId === "number" ? request.tabId : undefined
+      const target = tabId === undefined ? {} : { tabId }
+      if (action === "navigate") {
+        const url = typeof request.url === "string" ? request.url : undefined
+        if (url === undefined) return Effect.fail(new Error("The page action navigate needs a url"))
+        return sendToExtension({ method: "page.navigate", params: { ...target, url } })
+      }
+      if (action === "read")
+        return sendToExtension({ method: "page.read", params: { ...target, ...(request.html === true ? { html: true } : {}) } })
+      if (action === "screenshot") return sendToExtension({ method: "page.screenshot", params: target })
+      if (action === "lend") {
+        if (tabId === undefined) return Effect.fail(new Error("The page action lend needs a tabId"))
+        return Effect.gen(function* () {
+          yield* sendToExtension({ method: "debugger.attach", params: { tabId } })
+          yield* sendToExtension({ method: "debugger.sendCommand", params: { tabId, method: "Page.enable", params: {} } })
+          yield* sendToExtension({
+            method: "debugger.sendCommand",
+            params: { tabId, method: "Emulation.setFocusEmulationEnabled", params: { enabled: false } },
+          })
+          const info = yield* sendToExtension({
+            method: "debugger.sendCommand",
+            params: { tabId, method: "Target.getTargetInfo", params: {} },
+          })
+          return { tabId, ...info }
+        })
+      }
+      return Effect.fail(new Error(`Unknown page action: ${action}`))
+    },
     settings: settingsSync.httpSettings,
     extensionStatus: () => handshake.extensionStatus(),
   })

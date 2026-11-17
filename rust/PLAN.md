@@ -1,7 +1,7 @@
 # browse in Rust
 
-A rewrite of the browse CLI/relay (`cli/`) in Rust. The Chrome extension (`src/`) stays as is and
-the Rust relay must speak its exact protocol, so the store extension keeps working unchanged.
+A rewrite of the browse CLI/relay (`cli/`) in Rust. The browser add-on (`src/`) stays as is and
+the Rust relay must speak its exact protocol, so the published add-on keeps working unchanged.
 
 ## Decisions
 
@@ -13,14 +13,15 @@ the Rust relay must speak its exact protocol, so the store extension keeps worki
   relay-side).
 - **Tabs are the handle; there are no sessions.** `navigate` without `tab` (or `tabs new`) opens a background agent
   tab and returns its id; every other page and capture tool requires `tab`. Options are fixed when a tab opens:
-  `group` (the Chrome tab group's title and a handle for bulk close), `allowedOrigins`, `readOnly`, `keepVisible`,
+  `group` (the tab group's title and a handle for bulk close), `allowedOrigins`, `readOnly`, `keepVisible`,
   `browser`; popups a page opens become agent tabs with the opener's options. A tab is either opened by browse (an
   agent tab) or lent by the user (toolbar button); agents can't touch any other tab. Everything tools keep (refs,
   captures, emulation, execute `state`, busy flags, handoffs, focus) is per tab. No caller identity is needed, so
   every client behaves the same and the MCP proxy is a dumb pipe; calls are still tagged with the client pid so a
   dead client's calls and handoffs stop. Agent tabs (ids, options, group) persist in `<data>/relays/<port>/tabs.json`
   and are reattached after a relay restart.
-- **Talk CDP directly** through the extension's chrome.debugger relay. Inject Playwright's in-page script
+- **Talk CDP directly** through the add-on's debugger relay (CDP; Firefox dropped it in 141, so its page commands wait
+  on a WebDriver BiDi driver). Inject Playwright's in-page script
   (`injectedScriptSource`, Apache-2.0, from `cli/node_modules/patchright-core`) into an isolated world for selectors,
   `getByRole`-style lookups and `ariaSnapshot`, so snapshot quality matches today.
 - **Stealth like Patchright:** never call `Runtime.enable` or `Console.enable` by default; run browse code in

@@ -8,6 +8,8 @@ import {
   type FromStatusPage,
   type ToStatusPage,
 } from "../shared/protocol"
+import { unpackedExtensionId } from "../../cli/src/protocol"
+import { isFirefox } from "../shared/browser"
 import { richParts } from "./describe"
 import "./pages.css"
 
@@ -63,6 +65,19 @@ export function createStored<T>(key: string, read: (stored: unknown) => T) {
   onCleanup(() => chrome.storage.onChanged.removeListener(changed))
   const save = (next: unknown) => void chrome.storage.local.set({ [key]: next })
   return [value, save] as const
+}
+
+export function createUnpacked() {
+  const [unpacked, setUnpacked] = createSignal(isFirefox())
+  if (!isFirefox()) {
+    setUnpacked(chrome.runtime.id === unpackedExtensionId)
+    return unpacked
+  }
+  void Promise.resolve(chrome.management?.getSelf?.()).then(
+    (info) => setUnpacked(info?.installType === "development"),
+    () => undefined,
+  )
+  return unpacked
 }
 
 /** Text with `code` spans. */

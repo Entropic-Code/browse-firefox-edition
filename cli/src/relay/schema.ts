@@ -528,6 +528,17 @@ export const TabsCleanupResponse = Schema.Struct({
 })
 export type TabsCleanupResponse = typeof TabsCleanupResponse.Type
 
+/** A page the extension drove natively, for browsers with no debugger API to relay CDP through. */
+export const PageDriveResponse = Schema.Struct({
+  tabId: Schema.optionalKey(Schema.Number),
+  url: Schema.optionalKey(Schema.String),
+  title: Schema.optionalKey(Schema.String),
+  text: Schema.optionalKey(Schema.String),
+  html: Schema.optionalKey(Schema.String),
+  dataUrl: Schema.optionalKey(Schema.String),
+})
+export type PageDriveResponse = typeof PageDriveResponse.Type
+
 /** A user setting as the settings tool reports it (user-settings.ts). */
 const SettingValue = Schema.Union([Schema.String, Schema.Number])
 const SettingReport = Schema.Struct({

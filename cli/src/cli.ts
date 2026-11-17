@@ -17,6 +17,7 @@ import {
 } from "./cli/context.ts"
 import "./cli/execute.ts"
 import "./cli/network.ts"
+import "./cli/page.ts"
 import "./cli/recording.ts"
 import { buildRegisteredCliCommands } from "./cli/registry.ts"
 import "./cli/relay.ts"

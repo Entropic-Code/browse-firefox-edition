@@ -33,6 +33,7 @@ import {
   RecordingStatusResponse,
   RecordingStopResponse,
   type RecordingTargetRequest,
+  PageDriveResponse,
   RelayErrorCode,
   type RelayShutdownRequest,
   RelayShutdownResponse,
@@ -123,6 +124,13 @@ export class RelayConfigInvalid extends Schema.TaggedError<RelayConfigInvalid>()
 
 export type RelayClientError = RelayUnreachable | RelayRejected | RelayDecodeFailed | RelayEncodeFailed | RelayTimedOut
 
+export type PageDriveRequest = {
+  readonly action: "navigate" | "read" | "screenshot"
+  readonly url?: string
+  readonly tabId?: number
+  readonly html?: boolean
+}
+
 export interface Interface {
   readonly endpoint: string
   readonly version: Effect.Effect<RelayVersion, RelayClientError>
@@ -149,6 +157,8 @@ export interface Interface {
   readonly recordingCancel: (target: RecordingTargetRequest) => Effect.Effect<RecordingCancelResponse, RelayClientError>
   /** With `sessions`, `idleMinutes` applies only to those sessions' tabs; other tabs also wait for the user's setting. */
   readonly tabsCleanup: (idleMinutes?: number, sessions?: readonly string[]) => Effect.Effect<TabsCleanupResponse, RelayClientError>
+  /** Drives a page natively through the extension: navigate, read its content, or capture a screenshot. */
+  readonly pageDrive: (request: PageDriveRequest) => Effect.Effect<PageDriveResponse, RelayClientError>
   /** The user's settings (the extension's options page), with env overrides. */
   readonly settingsGet: Effect.Effect<SettingsGetResponse, RelayClientError>
   /** Changes settings; validated strictly by the relay. */
@@ -527,6 +537,7 @@ export const make = Effect.fn("RelayClient.make")(function* (options?: {
     recordingCancel: (target) => postJson("/recording/cancel", recordingTargetBody(target), RecordingCancelResponse),
     tabsCleanup: (idleMinutes, sessions) =>
       postJson("/tabs/cleanup", { ...(idleMinutes === undefined ? {} : { idleMinutes }), ...(sessions ? { sessions } : {}) }, TabsCleanupResponse),
+    pageDrive: (request) => postJson("/page", { ...request }, PageDriveResponse),
     settingsGet: getJson("/settings", SettingsGetResponse),
     settingsSet: (changes) => postJson("/settings", { set: changes }, SettingsSetResponse),
   })

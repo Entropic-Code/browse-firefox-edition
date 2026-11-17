@@ -2,6 +2,7 @@ export * as HandoffNotice from "./handoff-notice"
 
 import type { PageStatus } from "../agent-relay/protocol"
 import { HANDOFF_NOTIFICATIONS_KEY, handoffNotifications } from "../shared/protocol"
+import { browseNotification, notificationPermission } from "./agent-relay/wire"
 
 // A recording must show only the page, so a handoff on a tab being recorded draws no card there. The toolbar badge
 // says WAIT, and a system notification tells the user which agent needs them where; clicking it shows the tab
@@ -47,7 +48,7 @@ export async function sync(tabId: number, page: PageStatus | undefined, sessionN
   if (shown.get(tabId) === handoffId) return
   shown.set(tabId, handoffId)
   unnotified.delete(tabId)
-  const level = await chrome.notifications.getPermissionLevel().catch(() => "denied" as const)
+  const level = await notificationPermission()
   if (level !== "granted") {
     unnotified.add(tabId)
     return
@@ -55,15 +56,15 @@ export async function sync(tabId: number, page: PageStatus | undefined, sessionN
   const tab = await chrome.tabs.get(tabId).catch(() => undefined)
   const origin = originOf(tab?.url)
   await chrome.notifications
-    .create(PREFIX + tabId, {
-      type: "basic",
-      iconUrl: chrome.runtime.getURL("icons/icon-128.png"),
-      title: "browse",
-      message: `${sessionName(page?.sessionId)} needs you on ${origin}`,
-      ...(page?.message ? { contextMessage: page.message } : {}),
-      requireInteraction: true,
-      priority: 2,
-    })
+    .create(
+      PREFIX + tabId,
+      browseNotification({
+        iconUrl: chrome.runtime.getURL("icons/icon-128.png"),
+        title: "browse",
+        message: `${sessionName(page?.sessionId)} needs you on ${origin}`,
+        ...(page?.message ? { detail: page.message } : {}),
+      }),
+    )
     .catch(() => unnotified.add(tabId))
 }
 

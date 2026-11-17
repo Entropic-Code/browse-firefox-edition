@@ -2,7 +2,7 @@
  * The agent guide, in one place: the MCP server's initialize instructions and `browse --help` use the same sentences,
  * so the two cannot drift. Keep the help version short and indented for a terminal.
  */
-export const whatBrowseIs = `browse drives the user's real Chrome-family browser through the browse extension, so logins, extensions and open tabs are already there and the user can watch or take over.`
+export const whatBrowseIs = `browse drives the user's real browser through the browse add-on, so logins, extensions and open tabs are already there and the user can watch or take over.`
 
 export const inspectActVerify = `Use one loop: inspect, act, verify.
 - Inspect with \`await snapshot()\` before choosing anything. Prefer the returned refs: \`await ref("e12").click()\`. Fall back to accessible locators (\`page.getByRole(...)\`, \`getByLabel(...)\`), then CSS.
@@ -15,8 +15,8 @@ export const sessionAdvice = `Each agent has its own current session when the cl
 
 /** The `browse --help` version of the guide: what browse is, one script, the loop, handoff, and cleanup. */
 export const agentHelp = `AGENT GUIDE
-  browse drives the user's real Chrome-family browser through the browse extension, so logins,
-  extensions and open tabs are already there and the user can watch or take over. Agents normally
+  browse drives the user's real browser through the browse add-on, so logins, extensions and open
+  tabs are already there and the user can watch or take over. Agents normally
   use the MCP server (\`browse mcp\`); the same loop works from a terminal.
 
   Write one Playwright script to a file and run it:

@@ -1,0 +1,27 @@
+{
+  "background": {
+    "scripts": ["background.js"],
+    "type": "module"
+  },
+  "permissions": [
+    "tabs",
+    "tabGroups",
+    "storage",
+    "sessions",
+    "alarms",
+    "webNavigation",
+    "scripting",
+    "notifications",
+    "management"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "browse@opencode.ai",
+      "strict_min_version": "139.0"
+    }
+  }
+}

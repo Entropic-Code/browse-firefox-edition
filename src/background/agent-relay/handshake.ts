@@ -1,4 +1,4 @@
-import { extensionCapabilityTabRelease, extensionProtocolVersion } from "../../../cli/src/protocol"
+import { extensionProtocolVersion } from "../../../cli/src/protocol"
 import { defaultRelayPort, isJsonObject, relayPortHint, relayPorts } from "../../agent-relay/protocol"
 import {
   BROWSER_NAME_KEY,
@@ -37,6 +37,7 @@ import {
   PORT_KEY,
   PROFILE_KEY,
   PROVEN_PORT_KEY,
+  relayCapabilities,
   SPENT_KEY,
   TOKENS_KEY,
   type AgentRelayLog,
@@ -260,7 +261,7 @@ export function createRelayHandshake(deps: {
           protocolVersion: extensionProtocolVersion,
           // Optional additions an older relay ignores. `tab-release` keeps an agent tab open (and on idle cleanup)
           // when a relay releases it instead of closing it.
-          capabilities: [extensionCapabilityTabRelease],
+          capabilities: relayCapabilities(),
           profileId: profile.id,
           profileName: profile.name ?? "browse",
           // What agents call this browser: the name set on the status page, else the relay names it from these

@@ -1,5 +1,6 @@
 export * as PageScripts from "./page-scripts"
 
+import { isFirefox } from "../shared/browser"
 import { DebuggerHub } from "./debugger-hub"
 
 // The page-status script (src/content/page-status.ts) runs only in tabs agents use: it is injected with the first
@@ -11,7 +12,11 @@ const FILE = "content.js"
 /** Injects the page-status script into the tab's top frame; restricted pages (chrome://, the Web Store) refuse it. */
 async function inject(tabId: number) {
   await chrome.scripting
-    .executeScript({ target: { tabId }, files: [FILE], injectImmediately: true })
+    .executeScript(
+      isFirefox()
+        ? { target: { tabId }, files: [FILE] }
+        : { target: { tabId }, files: [FILE], injectImmediately: true },
+    )
     .catch(() => undefined)
 }
 

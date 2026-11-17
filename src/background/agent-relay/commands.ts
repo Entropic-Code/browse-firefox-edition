@@ -6,10 +6,12 @@ import {
   type JsonObject,
   type PageStatus,
 } from "../../agent-relay/protocol"
+import { isFirefox } from "../../shared/browser"
 import type { AgentRelayUpdate, RelayAutoUpdate, RelayOverrides } from "../../shared/protocol"
 import { AgentGroups } from "./groups"
 import { AgentWindow } from "./window"
 import { DebuggerHub } from "../debugger-hub"
+import * as FirefoxCdp from "../firefox-cdp"
 import { HandoffNotice } from "../handoff-notice"
 import { PageScripts } from "../page-scripts"
 import { TabCleanup } from "../tab-cleanup"
@@ -24,6 +26,7 @@ import {
   serialize,
   sessionName,
   sleep,
+  string,
   SLOW_CDP,
   text,
   TIMED_OUT,
@@ -155,6 +158,15 @@ export function createRelayCommands(deps: {
       case "debugger.sendCommand":
         TabCleanup.touch(number(params, "tabId"))
         return deps.sendCommand(params)
+      case "page.navigate": {
+        const target = await FirefoxCdp.targetTab(params?.tabId)
+        TabCleanup.touch(target.id)
+        return FirefoxCdp.pageNavigate(target.id, string(params, "url"))
+      }
+      case "page.read":
+        return FirefoxCdp.pageRead((await FirefoxCdp.targetTab(params?.tabId)).id, params?.html === true)
+      case "page.screenshot":
+        return FirefoxCdp.pageScreenshot((await FirefoxCdp.targetTab(params?.tabId)).id)
       case "tabs.create": {
         // In the background of the user's window (or the agents' own unfocused window, by setting), never in front
         // of the user's tabs.
@@ -187,9 +199,7 @@ export function createRelayCommands(deps: {
         // A caller-chosen id (`work-mail`) is kept on the tab: the relay never idle-closes such a tab, and the id
         // survives a browser restart with the rest of the tab's identity.
         const chosen = typeof params?.id === "string" && /^[a-z][a-z0-9-]{0,63}$/.test(params.id) ? params.id : undefined
-        // A discarded tab loses the debugger and the agent's page. Issued now but not awaited: the answer must not
-        // wait on it.
-        void chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => undefined)
+        if (!isFirefox()) void chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => undefined)
         // The tab is tracked in memory; clearing the creation marker must not hold the answer past the budget.
         await withTimeout(TabCleanup.endCreate(creating), deadline - Date.now())
         if (url === "about:blank") await waitUntilLoaded(tab.id, deps.log, deadline)

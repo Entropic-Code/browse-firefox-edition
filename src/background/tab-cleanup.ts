@@ -1,6 +1,6 @@
 export * as TabCleanup from "./tab-cleanup"
 import { DEFAULT_IDLE_MINUTES, IDLE_MINUTES_KEY, idleMinutesSetting } from "../shared/protocol"
-import { ownedGroup, TIMED_OUT, withTimeout } from "./agent-relay/wire"
+import { inTabGroup, ownedGroup, tabGroupNone, tabGroupsAvailable, TIMED_OUT, withTimeout } from "./agent-relay/wire"
 import { serialQueue } from "./serial"
 import { TabIdentity } from "./tab-identity"
 
@@ -116,7 +116,7 @@ async function closeAgentTabNow(tabId: number): Promise<void> {
   let groupId: number | undefined
   try {
     if (tab) await leaveLastWindowOpen(tab)
-    if (tab && tab.groupId !== chrome.tabGroups.TAB_GROUP_ID_NONE) {
+    if (tab && tabGroupsAvailable() && inTabGroup(tab)) {
       const group = await chrome.tabGroups.get(tab.groupId).catch(() => undefined)
       if (group && ownedGroup(group.title)) {
         groupId = tab.groupId
@@ -254,7 +254,9 @@ function restore() {
     }
     const [queriedTabs, queriedGroups] = await Promise.all([
       withTimeout(chrome.tabs.query({}).catch(() => [] as chrome.tabs.Tab[]), RESTORE_QUERY_MS),
-      withTimeout(chrome.tabGroups.query({}).catch(() => [] as chrome.tabGroups.TabGroup[]), RESTORE_QUERY_MS),
+      tabGroupsAvailable()
+        ? withTimeout(chrome.tabGroups.query({}).catch(() => [] as chrome.tabGroups.TabGroup[]), RESTORE_QUERY_MS)
+        : Promise.resolve([] as chrome.tabGroups.TabGroup[]),
     ])
     // A query that timed out counts as none, like a failed one: without its groups the stored list isn't trusted, and
     // without its tabs none of them are known to be open.
@@ -422,7 +424,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 })
 chrome.tabs.onUpdated.addListener((tabId, change) => {
   if (change.pinned) forget(tabId)
-  if (change.groupId === chrome.tabGroups.TAB_GROUP_ID_NONE) {
+  if (change.groupId !== undefined && change.groupId === tabGroupNone()) {
     // The relay's own ungroups keep tracking (it may be about to close the tab or keep using it); a tab the user
     // moves out of the agent group is theirs now.
     const byRelay = relayUngrouping.delete(tabId)

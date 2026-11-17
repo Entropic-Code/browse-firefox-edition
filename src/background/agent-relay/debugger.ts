@@ -1,5 +1,6 @@
 import { isJsonObject, type JsonObject } from "../../agent-relay/protocol"
 import { DebuggerHub } from "../debugger-hub"
+import * as FirefoxCdp from "../firefox-cdp"
 import { FOREIGN_FRAME, number, sleep, string, text, type AgentRelayLog } from "./wire"
 
 // about:blank with a fragment crashes Chrome and Vivaldi when navigated through CDP; the fragment means nothing on
@@ -26,7 +27,8 @@ export function createRelayDebugger(deps: {
     DebuggerHub.attach(tabId).then(
       () => {
         // A new attachment starts without the relay's focus emulation, which keeps a background tab from throttling.
-        void chrome.debugger.sendCommand({ tabId }, "Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => undefined)
+        if (!FirefoxCdp.available())
+          void chrome.debugger.sendCommand({ tabId }, "Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => undefined)
         if (!deps.relayTabs.has(tabId)) {
           deps.relayTabs.add(tabId)
           deps.notify()
@@ -48,6 +50,7 @@ export function createRelayDebugger(deps: {
   }
 
   const sendCommand = async (params: JsonObject | undefined): Promise<JsonObject> => {
+    if (!DebuggerHub.available()) throw new Error(DebuggerHub.NO_DEBUGGER)
     const tabId = number(params, "tabId")
     const method = string(params, "method")
     const sessionId = typeof params?.sessionId === "string" ? params.sessionId : undefined
@@ -56,6 +59,7 @@ export function createRelayDebugger(deps: {
     const sendParams = navigateUrl !== undefined && navigateUrl !== cdpParams?.url ? { ...cdpParams, url: navigateUrl } : cdpParams
     const debuggee = sessionId ? { tabId, sessionId } : { tabId }
     const call = async () => {
+      if (FirefoxCdp.available()) return FirefoxCdp.sendCommand(tabId, method, sendParams)
       const result = await chrome.debugger.sendCommand(debuggee, method, sendParams)
       return isJsonObject(result) ? result : {}
     }

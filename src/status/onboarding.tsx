@@ -10,8 +10,9 @@ import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"
 import { Menu } from "@opencode/ui/menu"
 import { TextInput } from "@opencode/ui/text-input"
-import { unpackedExtensionId, unpackedReloadAdvice } from "../../cli/src/protocol"
+import { unpackedReloadAdvice } from "../../cli/src/protocol"
 import { relayPorts } from "../agent-relay/protocol"
+import { isFirefox } from "../shared/browser"
 import { probeRelayPort, type RelayProbe } from "../agent-relay/probe"
 import { cliUpdateCommand, cliUpdateNotice } from "../shared/protocol"
 import { cliUpdateText } from "./describe"
@@ -20,7 +21,7 @@ import { pairingLink } from "./pairing-link"
 import { TRY_PROMPT, checklist } from "./checklist"
 import { installCommand, installMethod, installMethods, remoteInstallMethod, remoteInstallMethods, type InstallMethod } from "./install"
 import { RelayForm } from "./relay-form"
-import { applyColorScheme, Brand, createFlash, createRelay, Note, Rich, type Relay } from "./ui"
+import { applyColorScheme, Brand, createFlash, createRelay, createUnpacked, Note, Rich, type Relay } from "./ui"
 import "./onboarding.css"
 
 // `browse install` opens the setup page with a one-time code in the fragment (welcome.html#code=…, which forwards
@@ -34,7 +35,7 @@ if (link !== undefined || /^#(code|ticket|pair)=/.test(location.hash))
   history.replaceState(null, "", location.pathname + location.search)
 
 const settingsUrl = () => chrome.runtime.getURL("settings.html")
-const AGENT_PROMPT = `Set up browse so you can use my Chrome: run ${installCommand}`
+const AGENT_PROMPT = `Set up browse so you can use my ${isFirefox() ? "Firefox" : "Chrome"}: run ${installCommand}`
 
 type Where = "here" | "remote"
 type How = "agent" | "manual"
@@ -51,6 +52,18 @@ function Onboarding() {
   const [how, setHow] = createSignal<How>("agent")
   const [pickedMethod, setPickedMethod] = createSignal(installMethod.id)
   const [pickedRemoteMethod, setPickedRemoteMethod] = createSignal(remoteInstallMethod.id)
+  const [siteAccess, setSiteAccess] = createSignal(true)
+
+  const checkSiteAccess = () => {
+    if (!isFirefox()) return
+    void chrome.permissions.contains({ origins: ["<all_urls>"] }).then((granted) => setSiteAccess(granted), () => undefined)
+  }
+  const requestSiteAccess = () => {
+    void chrome.permissions.request({ origins: ["<all_urls>"] }).then((granted) => setSiteAccess(granted), () => undefined)
+  }
+  checkSiteAccess()
+  window.addEventListener("focus", checkSiteAccess)
+  onCleanup(() => window.removeEventListener("focus", checkSiteAccess))
 
   const step = createMemo(() => firstRunStep(relay.state(), installWaiting() ? "install-waiting" : probe()))
   const list = createMemo(() => checklist({ state: relay.state(), wasConnected: wasConnected(), tried: tried() }))
@@ -209,6 +222,17 @@ function Onboarding() {
               </Note>
             </div>
           )}
+        </Show>
+
+        <Show when={isFirefox() && !siteAccess()}>
+          <div class="guide-notice">
+            <Note tone="warn">
+              Firefox needs access to your sites before agents can use them.{" "}
+              <button type="button" class="link" onClick={requestSiteAccess}>
+                Allow access
+              </button>
+            </Note>
+          </div>
         </Show>
 
         <Show
@@ -423,7 +447,8 @@ function AgentStep(props: {
   const capitalized = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
   const kind = () => props.step.kind
   const remote = () => ("remote" in props.step ? props.step.remote : undefined)
-  const unpacked = () => (props.step.kind === "update-extension" ? props.step.unpacked || chrome.runtime.id === unpackedExtensionId : false)
+  const selfUnpacked = createUnpacked()
+  const unpacked = () => (props.step.kind === "update-extension" ? props.step.unpacked || selfUnpacked() : false)
   const showInstall = () => kind() === "install" || (kind() === "pair" && !remote()) || kind() === "mismatch"
 
   return (
@@ -485,17 +510,21 @@ function AgentStep(props: {
             when={!unpacked()}
             fallback={
               <Note tone="warn">
-                <Rich text={unpackedReloadAdvice} />
+                {isFirefox() ? "Reload browse in about:debugging (Reload) or restart Firefox." : <Rich text={unpackedReloadAdvice} />}
               </Note>
             }
           >
             <Note tone="warn">
-              This extension is older than the browse CLI on this computer. Chrome updates it within a few hours; to update
-              now, open the extensions page, turn on Developer mode and click Update.
+              {isFirefox()
+                ? "This add-on is older than the browse CLI on this computer. Firefox updates add-ons from addons.mozilla.org; to update now, open the add-ons page and click Check for updates."
+                : "This extension is older than the browse CLI on this computer. Chrome updates it within a few hours; to update now, open the extensions page, turn on Developer mode and click Update."}
             </Note>
             <div class="actions">
-              <Button variant="neutral" onClick={() => void chrome.tabs.create({ url: "chrome://extensions" })}>
-                Open the extensions page
+              <Button
+                variant="neutral"
+                onClick={() => void chrome.tabs.create({ url: isFirefox() ? "about:addons" : "chrome://extensions" })}
+              >
+                {isFirefox() ? "Open the add-ons page" : "Open the extensions page"}
               </Button>
             </div>
           </Show>

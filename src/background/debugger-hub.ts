@@ -2,20 +2,34 @@ export * as DebuggerHub from "./debugger-hub"
 
 import { serialQueue } from "./serial"
 
-// The chrome.debugger attachments this extension holds, one per tab, for everything in it that drives tabs: today
-// only the browse relay's agents. Chrome allows a single attachment per extension per tab, so a tab is either
-// attached or not.
-
 const attached = new Set<number>()
 const pending = new Map<number, Promise<void>>()
 const RELAY_KEY = "agentRelayAttached"
+
+export const NO_DEBUGGER = "This browser exposes no debugger API, so browse cannot drive its tabs."
+
+const debuggerApi = () => (chrome as typeof chrome & { debugger?: typeof chrome.debugger }).debugger
+
+/** Firefox has no chrome.debugger; its tabs are driven by the native driver instead. */
+const native = () => debuggerApi() === undefined && new URL(chrome.runtime.getURL("")).protocol === "moz-extension:"
+
+export function available() {
+  return debuggerApi() !== undefined || native()
+}
 
 /** Attaches the debugger to the tab; a tab this worker already attached is left as it is. */
 export async function attach(tabId: number) {
   if (attached.has(tabId)) return
   const inflight = pending.get(tabId)
   if (inflight) return inflight
-  const attaching = chrome.debugger
+  const api = debuggerApi()
+  if (api === undefined) {
+    if (!native()) throw new Error(NO_DEBUGGER)
+    attached.add(tabId)
+    void persist()
+    return
+  }
+  const attaching = api
     .attach({ tabId }, "1.3")
     .catch(async (error: unknown) => {
       // After a service worker restart this extension's earlier attachment survives; probing proves it.
@@ -39,7 +53,8 @@ export async function attach(tabId: number) {
 export async function detach(tabId: number) {
   attached.delete(tabId)
   void persist()
-  await chrome.debugger.detach({ tabId }).catch(() => undefined)
+  const api = debuggerApi()
+  if (api !== undefined) await api.detach({ tabId }).catch(() => undefined)
 }
 
 /** The tabs this worker holds a debugger attachment on. */
@@ -57,6 +72,16 @@ export function attachedTabs() {
  * timing out) goes with it, and the relay sets the tab up again from scratch anyway.
  */
 export async function restore() {
+  const api = debuggerApi()
+  if (api === undefined) {
+    const stored = ((await chrome.storage.local.get(RELAY_KEY))[RELAY_KEY] ?? []) as unknown[]
+    for (const item of stored) {
+      const tabId = typeof item === "number" ? item : (item as { tabId?: number }).tabId
+      if (typeof tabId === "number" && (await chrome.tabs.get(tabId).catch(() => undefined))) attached.add(tabId)
+    }
+    void persist()
+    return
+  }
   const stored = ((await chrome.storage.local.get(RELAY_KEY))[RELAY_KEY] ?? []) as unknown[]
   await Promise.all(
     stored.map(async (item) => {
@@ -65,7 +90,7 @@ export async function restore() {
       const tab = await chrome.tabs.get(tabId).catch(() => undefined)
       if (!tab) return
       if (await ownedByUs(tabId)) {
-        await chrome.debugger.detach({ tabId }).catch(() => undefined)
+        await api.detach({ tabId }).catch(() => undefined)
         await attach(tabId).catch(() => undefined)
         return
       }
@@ -77,7 +102,7 @@ export async function restore() {
   void persist()
 }
 
-chrome.debugger.onDetach.addListener((source) => {
+debuggerApi()?.onDetach.addListener((source) => {
   if (source.tabId === undefined) return
   attached.delete(source.tabId)
   void persist()
@@ -108,16 +133,16 @@ function persist() {
   }).catch(() => undefined)
 }
 
-// Tab ids don't survive a browser restart.
 chrome.runtime.onStartup.addListener(() => void chrome.storage.local.remove(RELAY_KEY))
-// The stored URL identifies the page on re-attach, so keep it current.
 chrome.tabs.onUpdated.addListener((tabId, change) => {
   if (change.url && attached.has(tabId)) void persist()
 })
 
 /** Chrome's attached flag includes DevTools and other extensions; a command only succeeds for ours. */
 async function ownedByUs(tabId: number) {
-  return chrome.debugger.sendCommand({ tabId }, "Target.getTargetInfo").then(
+  const api = debuggerApi()
+  if (api === undefined) return native() && attached.has(tabId)
+  return api.sendCommand({ tabId }, "Target.getTargetInfo").then(
     () => true,
     () => false,
   )

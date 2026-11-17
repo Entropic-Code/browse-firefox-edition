@@ -9,9 +9,14 @@
   "scripts": {
     "setup": "bun install && cd cli && bun install && bun run build && node dist/cli.mjs install",
     "build": "vite build && vite build -c vite.content.config.ts",
+    "build:firefox": "BROWSER_TARGET=firefox vite build && BROWSER_TARGET=firefox vite build -c vite.content.config.ts",
     "dev": "vite build -c vite.content.config.ts --mode development && (vite build -c vite.content.config.ts --watch --mode development & vite build --watch --mode development)",
+    "dev:firefox": "BROWSER_TARGET=firefox vite build -c vite.content.config.ts --mode development && (BROWSER_TARGET=firefox vite build -c vite.content.config.ts --watch --mode development & BROWSER_TARGET=firefox vite build --watch --mode development)",
+    "lint:firefox": "bunx web-ext lint --source-dir dist-firefox",
+    "build-for-amo": "bun run build:firefox && bunx web-ext build --source-dir dist-firefox --artifacts-dir release/firefox --ignore-files relay-pairing.json --overwrite-dest",
+    "check:firefox": "bun scripts/firefox-stage1-check.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test ./test && cd cli && bun test",
+    "test": "umask 022 && bun test ./test && cd cli && bun test",
     "package": "bun scripts/package.ts",
     "release": "bun scripts/release.ts",
     "release:check": "bun scripts/release-check.ts"

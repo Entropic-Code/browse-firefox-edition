@@ -88,10 +88,12 @@ pub fn advice(version: Option<i64>, distribution: Option<&str>) -> String {
         Some(_) => {
             let unpacked = "Reload browse on your browser's extensions page (↻).";
             let store = "The Chrome Web Store updates it within a few hours (to update now, open chrome://extensions, turn on Developer mode and click Update).";
+            let firefox = "Firefox updates add-ons from addons.mozilla.org (to update now, open about:addons and click Check for updates).";
             let next = match distribution {
                 Some("unpacked") => unpacked.to_string(),
                 Some("store") => store.to_string(),
-                _ => format!("For an unpacked extension: {unpacked} For a store extension: {store}"),
+                Some("firefox") => firefox.to_string(),
+                _ => format!("For an unpacked extension: {unpacked} For a store extension: {store} For the Firefox add-on: {firefox}"),
             };
             format!("The browse extension is older than this browse CLI ({versions}). {next}")
         }

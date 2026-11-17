@@ -22,15 +22,17 @@ export function chromeExtensionOriginForPath(extensionPath: string, platform: No
 }
 
 const chromeExtensionOriginPattern = /^chrome-extension:\/\/[a-p]+$/
+const firefoxExtensionOriginPattern = /^moz-extension:\/\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
 
 /**
  * Parses the operator-supplied `OPENCODE_BROWSER_EXTENSION_ORIGINS` value into a
- * de-duplicated list of `chrome-extension://<id>` origins to allowlist in
- * addition to the built-ins. Entries are separated by commas or whitespace;
- * anything that is not a bare `chrome-extension://` origin (web origins, paths,
- * scheme-less ids) is dropped so a malformed value can never widen the origin
- * check to a non-extension origin. Used for same-host unpacked installs where
- * the path-derived id cannot match the relay's own bundled path.
+ * de-duplicated list of extension origins (`chrome-extension://<id>` or
+ * `moz-extension://<uuid>`) to allowlist in addition to the built-ins. Entries
+ * are separated by commas or whitespace; anything that is not a bare extension
+ * origin (web origins, paths, scheme-less ids) is dropped so a malformed value
+ * can never widen the origin check to a non-extension origin. Used for
+ * same-host unpacked installs where the path-derived id cannot match the
+ * relay's own bundled path.
  */
 export function parseAdditionalExtensionOrigins(raw: string | undefined): string[] {
   if (!raw) {
@@ -40,7 +42,7 @@ export function parseAdditionalExtensionOrigins(raw: string | undefined): string
   const origins: string[] = []
   for (const token of raw.split(/[\s,]+/)) {
     const value = token.trim()
-    if (!value || !chromeExtensionOriginPattern.test(value) || seen.has(value)) {
+    if (!value || (!chromeExtensionOriginPattern.test(value) && !firefoxExtensionOriginPattern.test(value)) || seen.has(value)) {
       continue
     }
     seen.add(value)
@@ -88,6 +90,7 @@ export function validateWebSocketOrigin(options: {
   if (
     options.origin === stableUnpackedExtensionOrigin
     || options.additionalChromeExtensionOrigins?.has(options.origin)
+    || (options.requireChromeExtension === true && firefoxExtensionOriginPattern.test(options.origin))
   ) {
     return undefined
   }

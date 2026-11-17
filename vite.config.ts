@@ -1,6 +1,25 @@
-import { defineConfig } from "vite"
+import { defineConfig, type Plugin } from "vite"
 import solid from "vite-plugin-solid"
+import { readFileSync, writeFileSync } from "node:fs"
+import path from "node:path"
 import { fileURLToPath } from "node:url"
+
+const root = fileURLToPath(new URL(".", import.meta.url))
+const firefox = process.env.BROWSER_TARGET === "firefox"
+const outDir = firefox ? "dist-firefox" : "dist"
+
+function firefoxManifest(): Plugin {
+  return {
+    name: "browse-firefox-manifest",
+    closeBundle() {
+      const manifest = JSON.parse(readFileSync(path.join(root, "public", "manifest.json"), "utf8")) as Record<string, unknown>
+      Object.assign(manifest, JSON.parse(readFileSync(path.join(root, "manifest.firefox.json"), "utf8")))
+      delete manifest.key
+      delete manifest.minimum_chrome_version
+      writeFileSync(path.join(root, outDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`)
+    },
+  }
+}
 
 // The extension is loaded unpacked from dist/. The service worker must keep a stable name for the
 // manifest; everything else is content-hashed.
@@ -15,14 +34,14 @@ export default defineConfig(({ mode }) => ({
   },
   // The onboarding and settings pages are Solid, with @opencode/ui; everything they use is bundled (MV3 runs no
   // remote code).
-  plugins: [solid()],
-  root: fileURLToPath(new URL(".", import.meta.url)),
+  plugins: [solid(), ...(firefox ? [firefoxManifest()] : [])],
+  root,
   publicDir: "public",
   base: "./",
   build: {
-    outDir: "dist",
+    outDir,
     emptyOutDir: true,
-    target: "chrome130",
+    target: firefox ? "firefox139" : "chrome130",
     minify: mode !== "development",
     sourcemap: mode === "development" ? "inline" : false,
     modulePreload: false,

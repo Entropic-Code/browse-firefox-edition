@@ -32,10 +32,10 @@ import {
   type AutoUpdateMode,
   type RelayOverrides,
 } from "../shared/protocol"
-import { unpackedExtensionId } from "../../cli/src/protocol"
+import { isFirefox } from "../shared/browser"
 import { cliUpdateText, describeStatus } from "./describe"
 import { RelayForm } from "./relay-form"
-import { applyColorScheme, Brand, CopyBox, createRelay, createStored, Note, Rich } from "./ui"
+import { applyColorScheme, Brand, CopyBox, createRelay, createStored, createUnpacked, Note, Rich } from "./ui"
 import "./settings.css"
 
 const capitalized = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
@@ -50,6 +50,7 @@ function Settings() {
   const [human, setHuman] = createStored(HUMAN_INPUT_KEY, humanInput)
   const [notifications, setNotifications] = createStored(HANDOFF_NOTIFICATIONS_KEY, handoffNotifications)
   const [storedName] = createStored(BROWSER_NAME_KEY, (value) => (typeof value === "string" ? value : ""))
+  const unpacked = createUnpacked()
 
   const [name, setName] = createSignal<string>()
   const saveName = (event: SubmitEvent) => {
@@ -258,7 +259,7 @@ function Settings() {
                 <p class="advanced-status" data-state={state()?.status}>
                   <span class="dot" aria-hidden="true" />
                   <span>
-                    <Rich text={describeStatus(current(), chrome.runtime.id === unpackedExtensionId)} />
+                    <Rich text={describeStatus(current(), unpacked())} />
                   </span>
                 </p>
               )}
@@ -285,7 +286,7 @@ function Settings() {
               </Button>
             </div>
             <p class="advanced-id">
-              Extension ID <code>{chrome.runtime.id}</code>
+              {isFirefox() ? "Add-on ID" : "Extension ID"} <code>{chrome.runtime.id}</code>
             </p>
           </div>
         </details>

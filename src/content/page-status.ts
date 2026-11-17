@@ -13,6 +13,7 @@
 // outside the top layer: a password manager's menu elsewhere in the page (its own popover) stays on top and
 // uncovered, so the user can sign in with it during the handoff.
 // The toolbar badge shows the other states (ON, RUN).
+import "../shared/browser"
 import { pageStatusFromJson, type PageStatus } from "../agent-relay/protocol"
 
 type Loaded = { __opencodeBrowserPageStatus?: true }
@@ -193,7 +194,7 @@ function raise() {
  * elements it removed.
  */
 function evictForeignFrames(root: Node): number {
-  const own = `chrome-extension://${chrome.runtime.id}`
+  const own = chrome.runtime.getURL("")
   const foreign = (element: Element) => {
     const tag = element.tagName.toLowerCase()
     if (
@@ -205,7 +206,8 @@ function evictForeignFrames(root: Node): number {
       return true
     if (tag !== "iframe" && tag !== "frame" && tag !== "object" && tag !== "embed") return false
     const src = element.getAttribute("src") ?? element.getAttribute("data") ?? ""
-    return src.startsWith("chrome-extension://") && !src.startsWith(own)
+    if (src.startsWith(own)) return false
+    return src.startsWith("chrome-extension://") || src.startsWith("moz-extension://")
   }
   let removed = 0
   const visit = (node: Element | Document | ShadowRoot) => {

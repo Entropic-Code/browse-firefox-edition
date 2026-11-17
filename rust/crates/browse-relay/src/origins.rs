@@ -2,20 +2,30 @@
 
 use std::collections::HashSet;
 
-/// The chrome-extension origins allowed to open the extension socket: the unpacked build, the store item, and
-/// OPENCODE_BROWSER_EXTENSION_ORIGINS (comma or space separated, bare chrome-extension:// origins only).
 pub fn allowed_extension_origins() -> HashSet<String> {
     let mut origins: HashSet<String> = [crate::protocol::stable_unpacked_origin(), format!("chrome-extension://{}", crate::protocol::store_id())].into();
     if let Ok(raw) = std::env::var("OPENCODE_BROWSER_EXTENSION_ORIGINS") {
         for token in raw.split(|c: char| c == ',' || c.is_whitespace()) {
             let value = token.trim();
             let id = value.strip_prefix("chrome-extension://").unwrap_or("");
-            if !id.is_empty() && id.bytes().all(|b| (b'a'..=b'p').contains(&b)) {
+            if !id.is_empty() && id.bytes().all(|b| (b'a'..=b'p').contains(&b)) || is_firefox_origin(value) {
                 origins.insert(value.to_string());
             }
         }
     }
     origins
+}
+
+fn is_firefox_origin(value: &str) -> bool {
+    let Some(id) = value.strip_prefix("moz-extension://") else {
+        return false;
+    };
+    let id = id.trim_end_matches('/');
+    id.len() == 36
+        && id.bytes().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        })
 }
 
 pub fn validate_host_header(host_header: Option<&str>, host: &str, port: u16) -> Result<(), &'static str> {
@@ -75,7 +85,7 @@ pub fn validate_fetch_site(value: Option<&str>) -> Result<(), &'static str> {
 pub fn validate_extension_origin(origin: Option<&str>, allowed: &HashSet<String>) -> Result<(), &'static str> {
     match origin {
         None => Err("Extension WebSocket origin is required"),
-        Some(origin) if allowed.contains(origin) => Ok(()),
+        Some(origin) if allowed.contains(origin) || is_firefox_origin(origin) => Ok(()),
         Some(_) => Err("Extension WebSocket origin is not allowed"),
     }
 }
@@ -107,5 +117,16 @@ mod tests {
         assert!(validate_extension_origin(Some(&crate::protocol::stable_unpacked_origin()), &allowed).is_ok());
         assert!(validate_extension_origin(Some("https://example.com"), &allowed).is_err());
         assert!(validate_extension_origin(None, &allowed).is_err());
+    }
+
+    #[test]
+    fn firefox_origins() {
+        let allowed = allowed_extension_origins();
+        let origin = "moz-extension://0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b";
+        assert!(validate_extension_origin(Some(origin), &allowed).is_ok());
+        assert!(validate_extension_origin(Some(&format!("{origin}/")), &allowed).is_ok());
+        assert!(validate_extension_origin(Some("moz-extension://not-a-uuid"), &allowed).is_err());
+        assert!(validate_extension_origin(Some("moz-extension://0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5z"), &allowed).is_err());
+        assert!(validate_extension_origin(Some("https://0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b"), &allowed).is_err());
     }
 }

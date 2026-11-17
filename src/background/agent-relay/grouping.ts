@@ -6,10 +6,13 @@ import {
   autoNamed,
   GROUP_COLOR,
   groupTitle,
+  inTabGroup,
   ownedGroup,
   SESSION_GROUPS_KEY,
   sharedGroup,
   sharedTitle,
+  tabGroupNone,
+  tabGroupsAvailable,
   type AgentRelayLog,
 } from "./wire"
 
@@ -47,10 +50,14 @@ export function createRelayGrouping(deps: {
   const serially = serialQueue()
 
   /** Undoes a group the relay made itself. A tab it is still responsible for keeps its idle tracking. */
-  const undoGroup = (tabId: number) => TabCleanup.relayUngroup(tabId, () => chrome.tabs.ungroup(tabId).catch(() => undefined))
+  const undoGroup = (tabId: number) =>
+    TabCleanup.relayUngroup(tabId, () =>
+      tabGroupsAvailable() ? chrome.tabs.ungroup(tabId).catch(() => undefined) : Promise.resolve(),
+    )
 
   /** Keeps a shared group's title counting its tabs. */
   const countShared = async (groupId: number) => {
+    if (!tabGroupsAvailable()) return
     const item = await chrome.tabGroups.get(groupId).catch(() => undefined)
     if (!item || !sharedGroup(item.title)) return
     const count = (await chrome.tabs.query({ groupId }).catch(() => [])).length
@@ -60,6 +67,7 @@ export function createRelayGrouping(deps: {
 
   /** Recounts every shared group soon: tabs closed, moved, or left or joined a group. */
   const recountShared = () => {
+    if (!tabGroupsAvailable()) return
     clearTimeout(recount)
     recount = setTimeout(() => {
       void chrome.tabGroups
@@ -103,18 +111,18 @@ export function createRelayGrouping(deps: {
    * new tabs follow the new setting, and tabs aren't moved around under the user.
    */
   const group = async (tabId: number, sessionId: string | undefined, current: WebSocket) => {
+    if (!tabGroupsAvailable()) return tabGroupNone()
     const tab = await chrome.tabs.get(tabId)
     // window.open(..., "popup") has no tab strip. A group here can't join the opener's group; creating
     // and naming a separate saved group needlessly blocks Chrome's UI thread during concurrent opens.
-    if ((await chrome.windows.get(tab.windowId)).type === "popup") return chrome.tabGroups.TAB_GROUP_ID_NONE
+    if ((await chrome.windows.get(tab.windowId)).type === "popup") return tabGroupNone()
     const mode = await AgentGroups.mode()
-    const existing =
-      tab.groupId === chrome.tabGroups.TAB_GROUP_ID_NONE ? undefined : await chrome.tabGroups.get(tab.groupId).catch(() => undefined)
+    const existing = !inTabGroup(tab) ? undefined : await chrome.tabGroups.get(tab.groupId).catch(() => undefined)
     if (existing && ownedGroup(existing.title) && (mode === "none" || sharedGroup(existing.title) !== (mode === "shared"))) {
       await AgentGroups.adopt(existing.id)
       return existing.id
     }
-    if (mode === "none") return chrome.tabGroups.TAB_GROUP_ID_NONE
+    if (mode === "none") return tabGroupNone()
     if (mode === "shared") return serially(() => groupShared(tabId, current))
     const title = groupTitle(sessionId, tab.url)
     const key = sessionId ?? ""
@@ -148,8 +156,9 @@ export function createRelayGrouping(deps: {
 
   /** Auto-named sessions take their group name from the site the agent is on, so it follows navigation. */
   const renameForPage = async (tabId: number, url: string | undefined) => {
+    if (!tabGroupsAvailable()) return
     const tab = await chrome.tabs.get(tabId).catch(() => undefined)
-    if (!tab || tab.groupId === chrome.tabGroups.TAB_GROUP_ID_NONE) return
+    if (!tab || !inTabGroup(tab)) return
     await restoreSessionGroups()
     const sessionId = Array.from(sessionGroups).find(([, id]) => id === tab.groupId)?.[0]
     if (sessionId === undefined || !autoNamed(sessionId)) return
@@ -170,7 +179,7 @@ export function createRelayGrouping(deps: {
     const tab = await chrome.tabs.get(tabId).catch(() => undefined)
     if (!tab) return
     if (options.released) TabCleanup.forget(tabId)
-    const grouped = tab.groupId !== chrome.tabGroups.TAB_GROUP_ID_NONE
+    const grouped = inTabGroup(tab)
     if (!grouped && !options.finished && !options.released) return
     const current = grouped ? await chrome.tabGroups.get(tab.groupId).catch(() => undefined) : undefined
     if (grouped && !ownedGroup(current?.title)) return
@@ -189,6 +198,7 @@ export function createRelayGrouping(deps: {
    * A tab the relay released instead of closing stays grouped and tracked, so the idle setting still applies.
    */
   const ungroupStale = async () => {
+    if (!tabGroupsAvailable()) return
     const groups = (await chrome.tabGroups.query({})).filter((item) => ownedGroup(item.title))
     for (const item of groups)
       for (const tab of await chrome.tabs.query({ groupId: item.id }))

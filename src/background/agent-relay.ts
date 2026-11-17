@@ -22,6 +22,7 @@ import {
   type RelayOverrides,
   type RelaySettings,
 } from "../shared/protocol"
+import { isFirefox } from "../shared/browser"
 import { createAgentRelayLog, formatAgentRelayLog } from "./agent-relay/log"
 import { AgentGroups } from "./agent-relay/groups"
 import { createRelayCommands } from "./agent-relay/commands"
@@ -539,7 +540,7 @@ export function createAgentRelay(input: { changed: (state: AgentRelayState) => v
   }
 
   // Listeners live as long as the worker, not a connection, so reconnects never add more.
-  chrome.debugger.onEvent.addListener((source, method, params) => {
+  chrome.debugger?.onEvent?.addListener((source, method, params) => {
     if (source.tabId === undefined || !relayTabs.has(source.tabId)) return
     send({
       method: "debugger.event",
@@ -551,7 +552,7 @@ export function createAgentRelay(input: { changed: (state: AgentRelayState) => v
       },
     })
   })
-  chrome.debugger.onDetach.addListener((source, reason) => {
+  chrome.debugger?.onDetach?.addListener((source, reason) => {
     const tabId = source.tabId
     if (reloading || tabId === undefined || !relayTabs.has(tabId)) return
     const sessionId = (source as chrome.debugger.DebuggerSession).sessionId
@@ -576,7 +577,7 @@ export function createAgentRelay(input: { changed: (state: AgentRelayState) => v
     if (change.groupId !== undefined) grouping.recountShared()
   })
   chrome.tabs.onAttached.addListener(() => grouping.recountShared())
-  chrome.tabGroups.onRemoved.addListener(grouping.onGroupRemoved)
+  chrome.tabGroups?.onRemoved?.addListener(grouping.onGroupRemoved)
   // Group ids don't survive a browser restart.
   chrome.runtime.onStartup.addListener(grouping.onBrowserStartup)
   chrome.tabs.onDetached.addListener(() => grouping.recountShared())
@@ -616,7 +617,7 @@ export function createAgentRelay(input: { changed: (state: AgentRelayState) => v
     send,
     countShared: grouping.countShared,
   })
-  void chrome.alarms.create(ALARM, { periodInMinutes: extensionReconnectAlarmPeriodMs / 60_000 })
+  void chrome.alarms.create(ALARM, { periodInMinutes: isFirefox() ? 1 : extensionReconnectAlarmPeriodMs / 60_000 })
   /**
    * Tabs Chrome restored with a browse id on them (a browser restart): attach them again and let the relay claim
    * them under their old ids. A tab an agent opened is tracked again so idle cleanup still applies, except a tab

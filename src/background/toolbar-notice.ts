@@ -1,5 +1,8 @@
 export * as ToolbarNotice from "./toolbar-notice"
 
+import { isFirefox } from "../shared/browser"
+import { browseNotification, notificationPermission } from "./agent-relay/wire"
+
 // A toolbar click that can't attach says why with the system notification handoffs use. The page can't carry the
 // message: the pages this happens on (the Web Store, chrome://, file pages without file access) refuse the page script
 // a card would need. A click while the relay is connected always goes through, because the relay may still hold the
@@ -17,9 +20,15 @@ const MESSAGES: Record<Blocked, string> = {
   file: "browse can't use this file. Turn on “Allow access to file URLs” for browse on its details page in chrome://extensions, then click the toolbar button again.",
   page: "browse can't use this page. Chrome doesn't let extensions control browser pages or the Chrome Web Store.",
 }
+const FIREFOX_MESSAGES: Record<Blocked, string> = {
+  file: "browse can't use this file. Turn on “Access local files on your computer” for browse in about:addons → Permissions and data, then click the toolbar button again.",
+  page: "browse can't use this page. Firefox doesn't let add-ons control its own pages, about: pages or another add-on's pages.",
+}
+const messages = () => (isFirefox() ? FIREFOX_MESSAGES : MESSAGES)
 
-/** Documents `chrome.debugger` refuses: browser internals, other extensions, and the Chrome Web Store. */
+/** Documents the debugger refuses: browser internals, other extensions, and the Chrome Web Store. */
 const INTERNAL = /^(?:chrome|chrome-untrusted|chrome-extension|chrome-search|devtools|edge|brave|opera|vivaldi):/i
+const FIREFOX_INTERNAL = /^(?:moz-extension|resource|page-icon):|^about:(?!blank$|srcdoc$)/i
 const STORE = /^https:\/\/(?:chromewebstore\.google\.com|chrome\.google\.com\/webstore)(?:[/?#]|$)/i
 /** browse's own pages aren't a page an agent could use, but "browse can't use this page" would be confusing there. */
 const OWN = chrome.runtime.getURL("")
@@ -28,7 +37,7 @@ const OWN = chrome.runtime.getURL("")
 export async function unavailable(tabId: number): Promise<Blocked | undefined> {
   const blocked = await classify(await tabUrl(tabId))
   if (!blocked) return undefined
-  await show(tabId, MESSAGES[blocked])
+  await show(tabId, messages()[blocked])
   return blocked
 }
 
@@ -42,7 +51,8 @@ async function classify(url: string | undefined): Promise<Blocked | undefined> {
       .catch(() => true)
     return allowed === false ? "file" : undefined
   }
-  return INTERNAL.test(url) || STORE.test(url) ? "page" : undefined
+  const internal = isFirefox() ? FIREFOX_INTERNAL : INTERNAL
+  return internal.test(url) || STORE.test(url) ? "page" : undefined
 }
 
 /** The page the attach will judge: a tab still loading has only `pendingUrl`. */
@@ -70,7 +80,7 @@ export function take(tabId: number) {
 /** Says why the clicked tab's attach failed, with the advice above or Chrome's own reason. */
 export async function failed(tabId: number, error: unknown) {
   const blocked = await classify(await tabUrl(tabId))
-  if (blocked) return show(tabId, MESSAGES[blocked])
+  if (blocked) return show(tabId, messages()[blocked])
   const text = error instanceof Error ? error.message : String(error)
   if (/another debugger/i.test(text))
     return show(tabId, "browse couldn't use this tab: another debugger (DevTools or another extension) is attached to it. Close that, then click the toolbar button again.")
@@ -90,17 +100,13 @@ export async function clear(tabId: number) {
 
 // Like a handoff notice, this is best effort: when notifications are off there is nowhere on these pages to fall back to.
 async function show(tabId: number, message: string) {
-  const level = await chrome.notifications.getPermissionLevel().catch(() => "denied" as const)
+  const level = await notificationPermission()
   if (level !== "granted") return
   await chrome.notifications
-    .create(PREFIX + tabId, {
-      type: "basic",
-      iconUrl: chrome.runtime.getURL("icons/icon-128.png"),
-      title: "browse",
-      message,
-      requireInteraction: true,
-      priority: 2,
-    })
+    .create(
+      PREFIX + tabId,
+      browseNotification({ iconUrl: chrome.runtime.getURL("icons/icon-128.png"), title: "browse", message }),
+    )
     .catch(() => undefined)
 }
 

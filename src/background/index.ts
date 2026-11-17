@@ -2,6 +2,7 @@
 // toolbar button lets agents use the current tab, or stops them (before setup, it opens the onboarding page). The
 // onboarding page (onboarding.html) walks through setup; the settings page (settings.html, the options page) shows the
 // connection.
+import "../shared/browser"
 import { AGENT_DIAGNOSTICS, STATUS_PORT, type FromStatusPage, type ToStatusPage } from "../shared/protocol"
 import { createAgentRelay } from "./agent-relay"
 import { TabCleanup } from "./tab-cleanup"
@@ -33,10 +34,11 @@ chrome.runtime.onConnect.addListener((port) => {
   // Only this extension's own pages may drive the relay: a content script in a page shares our extension id, but its
   // sender URL is the page's, not chrome-extension://<id>/.
   const sender = port.sender
-  const origin = `chrome-extension://${chrome.runtime.id}`
+  const base = chrome.runtime.getURL("")
+  const origin = base.slice(0, -1)
   const page = sender?.id === chrome.runtime.id &&
-    sender.url?.startsWith(`${origin}/`) === true &&
-    (sender.origin === undefined || sender.origin === origin || sender.origin === `${origin}/`)
+    sender.url?.startsWith(base) === true &&
+    (sender.origin === undefined || sender.origin === origin || sender.origin === base)
   if (port.name !== STATUS_PORT || !page) return
   pages.add(port)
   port.onDisconnect.addListener(() => pages.delete(port))
@@ -57,7 +59,7 @@ chrome.runtime.onConnect.addListener((port) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const relay = agents.runtimeMessage(message, sender, sendResponse)
   if (relay !== undefined) return relay
-  const page = sender.id === chrome.runtime.id && sender.url?.startsWith(`chrome-extension://${chrome.runtime.id}/`)
+  const page = sender.id === chrome.runtime.id && sender.url?.startsWith(chrome.runtime.getURL(""))
   if (!page || typeof message !== "object" || message?.action !== AGENT_DIAGNOSTICS) return false
   void agents.diagnostics().then(
     (text) => sendResponse({ text }),

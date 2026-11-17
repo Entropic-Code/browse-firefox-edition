@@ -86,6 +86,11 @@ fn origin() -> String {
     crate::protocol::stable_unpacked_origin()
 }
 
+/// Firefox generates the add-on's origin per profile: nothing about it is pre-shared.
+fn firefox_origin() -> String {
+    "moz-extension://0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b".into()
+}
+
 /// Pairs with an issued token, the way the extension does on every connection.
 async fn pair_with_token(port: u16, paths: &Paths, profile: &str) -> Socket {
     let token = pairing::issue_browser_token(paths, profile, None, None).unwrap();
@@ -309,6 +314,43 @@ async fn refuses_a_wrong_token() {
     let status = h.handle.relay.extension_status();
     assert_eq!(status["pairingState"], "refused");
     assert_eq!(status["reconnecting"], false);
+}
+
+#[tokio::test]
+async fn pairs_a_firefox_origin_with_a_token() {
+    let h = harness().await;
+    let port = h.handle.port();
+    let token = pairing::issue_browser_token(&h.paths, "firefox-school", None, None).unwrap();
+    let mut socket = connect(port, &firefox_origin()).await.expect("a moz-extension origin may open the extension socket");
+    send(&mut socket, json!({ "method": "protocol", "params": { "protocolVersion": 3 } })).await;
+    let nonce = b64url(&random_bytes::<32>());
+    send(&mut socket, hello("firefox-school", "token", &nonce, None)).await;
+    let challenge = next(&mut socket).await;
+    assert_eq!(challenge["method"], "auth.challenge", "{challenge}");
+    let relay_nonce = challenge["params"]["nonce"].as_str().unwrap().to_string();
+    assert_eq!(challenge["params"]["proof"], pairing::pairing_proof(&token, "relay", port, &relay_nonce, &nonce));
+    send(&mut socket, json!({ "method": "auth.response", "params": { "proof": pairing::pairing_proof(&token, "extension", port, &nonce, &relay_nonce) } })).await;
+    send(&mut socket, json!({ "method": "ready" })).await;
+    let relay = h.handle.relay.clone();
+    eventually("the paired Firefox", || relay.st().connected()).await;
+    let stored = pairing::read_browser_pairings(&h.paths).remove("firefox-school").unwrap();
+    assert_eq!(stored.token, token);
+}
+
+#[tokio::test]
+async fn refuses_a_wrong_proof_from_a_firefox_origin() {
+    let h = harness().await;
+    let port = h.handle.port();
+    pairing::issue_browser_token(&h.paths, "firefox-school", None, None).unwrap();
+    let mut socket = connect(port, &firefox_origin()).await.expect("a moz-extension origin may open the extension socket");
+    let nonce = b64url(&random_bytes::<32>());
+    send(&mut socket, hello("firefox-school", "token", &nonce, None)).await;
+    let challenge = next(&mut socket).await;
+    let relay_nonce = challenge["params"]["nonce"].as_str().unwrap();
+    let forged = pairing::pairing_proof(&pairing::new_browser_token(), "extension", port, &nonce, relay_nonce);
+    send(&mut socket, json!({ "method": "auth.response", "params": { "proof": forged } })).await;
+    assert_eq!(next(&mut socket).await["close"], 4006, "the origin is not the gate: a wrong proof is still refused");
+    assert_eq!(h.handle.relay.st().handshake.pairing_failures, 1);
 }
 
 #[tokio::test]
