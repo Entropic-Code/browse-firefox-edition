@@ -131,6 +131,95 @@ export async function pageRead(tabId: number, html: boolean): Promise<JsonObject
   }
 }
 
+/**
+ * Types text into the focused editor. Google Docs renders its document on a canvas and takes input through a hidden
+ * contenteditable iframe, so plain DOM value writes don't reach it; the same iframe's execCommand does. Elsewhere the
+ * focused input, textarea or contenteditable gets the text.
+ */
+export async function pageInsertText(tabId: number, value: string): Promise<JsonObject> {
+  const [injection] = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    func: (text: string) => {
+      const result: {
+        ok: boolean
+        via: string
+        active?: string
+        error?: string
+        frame?: boolean
+        body?: boolean
+        editable?: boolean
+        designMode?: string
+        focused?: boolean
+        canvas?: number
+        target?: string
+        before?: string
+        after?: string
+        inserted?: boolean
+      } = { ok: false, via: "none" }
+      const describe = (element: Element | null) =>
+        element === null ? undefined : `${element.tagName.toLowerCase()}${(element as HTMLElement).isContentEditable ? "[editable]" : ""}`
+      try {
+        result.focused = document.hasFocus()
+        result.canvas = document.querySelectorAll(".kix-canvas-tile-content").length
+        const frame = document.querySelector<HTMLIFrameElement>(".docs-texteventtarget-iframe")
+        result.frame = frame !== null
+        const target = frame?.contentDocument
+        if (frame?.contentWindow) frame.contentWindow.focus()
+        result.body = target?.body !== null && target?.body !== undefined
+        result.editable = target?.body?.isContentEditable ?? false
+        result.designMode = target?.designMode
+        const editable = target?.querySelector<HTMLElement>("[contenteditable]")
+        if (target?.body) {
+          const element = editable ?? target.body
+          element.focus()
+          target.body.focus()
+          result.target = describe(element)
+          result.active = describe(target.activeElement)
+          result.before = element.textContent ?? ""
+          // execCommand needs a collapsed caret inside the editable element; an unfocused hidden iframe has no selection.
+          const selection = target.getSelection()
+          if (selection) {
+            const range = target.createRange()
+            range.selectNodeContents(element)
+            range.collapse(false)
+            selection.removeAllRanges()
+            selection.addRange(range)
+          }
+          result.via = "docs-iframe"
+          result.ok = target.execCommand("insertText", false, text)
+          result.after = element.textContent ?? ""
+          result.inserted = result.after !== result.before
+          return result
+        }
+        const active = document.activeElement as HTMLElement | null
+        result.active = describe(active)
+        if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+          const start = active.selectionStart ?? active.value.length
+          const end = active.selectionEnd ?? active.value.length
+          active.value = active.value.slice(0, start) + text + active.value.slice(end)
+          active.selectionStart = active.selectionEnd = start + text.length
+          active.dispatchEvent(new Event("input", { bubbles: true }))
+          result.ok = true
+          result.via = "input"
+        } else if (active?.isContentEditable) {
+          result.via = "contenteditable"
+          result.ok = document.execCommand("insertText", false, text)
+        } else if (document.body) {
+          document.body.focus()
+          result.via = "body"
+          result.ok = document.execCommand("insertText", false, text)
+        }
+      } catch (error) {
+        result.error = error instanceof Error ? error.message : String(error)
+      }
+      return result
+    },
+    args: [value],
+  })
+  return (injection?.result ?? { ok: false, via: "none", error: "The page returned no result" }) as JsonObject
+}
+
 type CaptureTab = (tabId: number, options?: { format?: string }) => Promise<string>
 
 const captureTab = () => (chrome.tabs as unknown as { captureTab: CaptureTab }).captureTab

@@ -162,6 +162,11 @@ export function createRelayCommands(deps: {
         return FirefoxCdp.pageRead((await FirefoxCdp.targetTab(params?.tabId)).id, params?.html === true)
       case "page.screenshot":
         return FirefoxCdp.pageScreenshot((await FirefoxCdp.targetTab(params?.tabId)).id)
+      case "page.insertText": {
+        const target = await FirefoxCdp.targetTab(params?.tabId)
+        TabCleanup.touch(target.id)
+        return FirefoxCdp.pageInsertText(target.id, string(params, "text"))
+      }
       case "tabs.create": {
         // In the background of the user's window (or the agents' own unfocused window, by setting), never in front
         // of the user's tabs.

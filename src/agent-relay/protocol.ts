@@ -62,6 +62,7 @@ const commandMethods = [
   "page.navigate",
   "page.read",
   "page.screenshot",
+  "page.insertText",
 ] as const
 
 export type ExtensionCommand = {

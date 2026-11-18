@@ -846,6 +846,30 @@ const makeRelay = Effect.fnUntraced(function* (options: {
       if (action === "read")
         return sendToExtension({ method: "page.read", params: { ...target, ...(request.html === true ? { html: true } : {}) } })
       if (action === "screenshot") return sendToExtension({ method: "page.screenshot", params: target })
+      if (action === "focus")
+        return sendToExtension({
+          method: "debugger.sendCommand",
+          params: { ...target, method: "Page.bringToFront", params: {} },
+        })
+      if (action === "eval") {
+        const expression = typeof request.expression === "string" ? request.expression : undefined
+        if (expression === undefined) return Effect.fail(new Error("The page action eval needs an expression"))
+        return sendToExtension({
+          method: "debugger.sendCommand",
+          params: {
+            ...target,
+            method: "Runtime.evaluate",
+            params: { expression, awaitPromise: request.awaitPromise !== false, returnByValue: true },
+          },
+        })
+      }
+      if (action === "type") {
+        const text = typeof request.text === "string" ? request.text : undefined
+        if (text === undefined) return Effect.fail(new Error("The page action type needs text"))
+        return sendToExtension({ method: "page.insertText", params: { ...target, text } }).pipe(
+          Effect.map((result) => ({ result })),
+        )
+      }
       if (action === "lend") {
         if (tabId === undefined) return Effect.fail(new Error("The page action lend needs a tabId"))
         return Effect.gen(function* () {

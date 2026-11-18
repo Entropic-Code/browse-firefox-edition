@@ -125,10 +125,13 @@ export class RelayConfigInvalid extends Schema.TaggedError<RelayConfigInvalid>()
 export type RelayClientError = RelayUnreachable | RelayRejected | RelayDecodeFailed | RelayEncodeFailed | RelayTimedOut
 
 export type PageDriveRequest = {
-  readonly action: "navigate" | "read" | "screenshot"
+  readonly action: "navigate" | "read" | "screenshot" | "eval" | "type" | "focus"
   readonly url?: string
   readonly tabId?: number
   readonly html?: boolean
+  readonly expression?: string
+  readonly awaitPromise?: boolean
+  readonly text?: string
 }
 
 export interface Interface {

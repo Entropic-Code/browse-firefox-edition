@@ -536,6 +536,7 @@ export const PageDriveResponse = Schema.Struct({
   text: Schema.optionalKey(Schema.String),
   html: Schema.optionalKey(Schema.String),
   dataUrl: Schema.optionalKey(Schema.String),
+  result: Schema.optionalKey(Schema.Unknown),
 })
 export type PageDriveResponse = typeof PageDriveResponse.Type
 

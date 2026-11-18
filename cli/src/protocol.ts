@@ -151,6 +151,7 @@ const extensionCommandMethodValues = [
   "page.navigate",
   "page.read",
   "page.screenshot",
+  "page.insertText",
 ] as const
 
 const extensionEventMethodValues = [
