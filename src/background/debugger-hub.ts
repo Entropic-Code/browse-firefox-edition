@@ -76,8 +76,13 @@ export async function restore() {
   if (api === undefined) {
     const stored = ((await chrome.storage.local.get(RELAY_KEY))[RELAY_KEY] ?? []) as unknown[]
     for (const item of stored) {
-      const tabId = typeof item === "number" ? item : (item as { tabId?: number }).tabId
-      if (typeof tabId === "number" && (await chrome.tabs.get(tabId).catch(() => undefined))) attached.add(tabId)
+      const { tabId, url } = typeof item === "number" ? { tabId: item, url: undefined } : (item as { tabId?: number; url?: string })
+      if (typeof tabId !== "number") continue
+      const tab = await chrome.tabs.get(tabId).catch(() => undefined)
+      if (!tab) continue
+      // Firefox tab ids don't survive a browser restart either: only re-attach the same page.
+      if (url !== undefined && tab.url !== url) continue
+      attached.add(tabId)
     }
     void persist()
     return
