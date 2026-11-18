@@ -3,6 +3,8 @@
   <img src="assets/banner-light.png" alt="browse: let your AI agents use your real browser. An isometric desk computer whose screen shows a web browser with an agent's tab group, cabled to a small relay box.">
 </picture>
 
+# Firefox Edition
+
 Let your AI agents use your real browser: your tabs, your logins, your extensions. A small native MCP server and a
 Firefox add-on, for [OpenCode](https://opencode.ai), Claude Code, Codex, Cursor and any other MCP client.
 
@@ -126,7 +128,9 @@ Windows, or `CONFIG` on Linux. The paths below are defaults; a client's existing
 | [Qoder CLI](https://docs.qoder.com/cli/mcp-reference) (`qoder`) | `~/.qoder/settings.json` | JSON · `mcpServers` |
 | [Qwen Code](https://qwenlm.github.io/qwen-code-docs/en/users/features/mcp/) (`qwen-code`) | `~/.qwen/settings.json` | JSON · `mcpServers` |
 | [Roo Code (VS Code)](https://docs.roocode.com/features/mcp/using-mcp-in-roo) (`roo`) | `APP/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json` | JSON · `mcpServers` |
+| Trae CN (`trae-cn`) | `APP/Trae CN/User/mcp.json` | JSON · `mcpServers` |
 | [Warp](https://docs.warp.dev/agents/capabilities/mcp) (`warp`) | `~/.warp/.mcp.json` | JSON · `mcpServers` |
+| WorkBuddy (`workbuddy`) | `~/.workbuddy/mcp.json` | JSON · `mcpServers` |
 | [Zed](https://zed.dev/docs/ai/mcp) (`zed`) | macOS: `~/.config/zed/settings.json`; Linux: `CONFIG/zed/settings.json`; Windows: `APP/Zed/settings.json` | JSONC · `context_servers` |
 
 </details>
@@ -165,19 +169,26 @@ The connection isn't encrypted by browse; use a network that is (Tailscale or Wi
 
 ### Updates
 
-**Updates are automatic.** The relay checks once at start and then hourly, and installs a new version when no agent
-is using the browser:
+**Updates are automatic.** Every relay checks at launch and then hourly, whatever the update setting, and installs the
+channel's release when it isn't the one running (a rollback reaches everyone too):
 
-- the install script's binary (and npx/bunx copies) read the channel's manifest from the release service and replace
-  `~/.local/bin/browse` after checking its size and SHA-256;
-- global installs read npm's dist-tag (`latest`, or `dev`/`beta` for those builds) and run the package manager that
-  installed them (`npm install -g`, `bun add -g`, `pnpm add -g`, `yarn global add`, `volta install`) into the same
-  place.
+- every install reads its channel's manifest from the release service (`stable`, or `dev`/`beta` for those builds),
+  with `browse/<channel>/<version>/cli/<install kind>` as the User-Agent;
+- the install script's binary replaces `~/.local/bin/browse` with the manifest's tarball after checking its size and
+  SHA-256;
+- global installs run the package manager that installed them (`npm install -g`, `bun add -g`, `pnpm add -g`,
+  `yarn global add`, `volta install`) to install `@opencode/browse@<the manifest's version>` into the same place. A
+  release reaches the service a few minutes before npm, so a package manager that doesn't have the version yet is
+  retried quietly;
+- `npx`, `bunx`, `pnpm dlx` and `yarn dlx` runs resolve the package themselves: they only tell you another release is
+  out.
 
-The relay restarts on the new version when it's idle; agent tabs stay open and come back. A running MCP server keeps
+A relay browse started restarts on the new version when it's idle (one you run with `browse serve` in a terminal keeps
+running until you restart it); agent tabs stay open and come back. A running MCP server keeps
 working with the newer relay until the agent restarts it. `browse update` updates now and `browse update --check` only
 looks. Choose **Tell me** or **Off** under **updates** on the extension's options page, or run `browse update --mode
-notify|off` (`OPENCODE_BROWSER_AUTO_UPDATE=off` in the environment overrides both). To go back, rerun the install
+notify|off` (`OPENCODE_BROWSER_AUTO_UPDATE=off` in the environment overrides both). Off still checks hourly, and
+installs nothing. To go back, rerun the install
 script with `--channel <channel>` or `--version <version>`, or install `@opencode/browse@<version>` with your package
 manager. A signed Firefox add-on updates from addons.mozilla.org; a temporary one is replaced by quitting Firefox and
 running `./setup-full.sh --extension-only` again.
@@ -209,16 +220,18 @@ clicking, typing, `execute`, capture) go through CDP, which Firefox doesn't have
 - **Tabs are the handle.** `navigate` without a `tab` opens a new background tab and returns its id; every other call
   passes that `tab`. Agents use the tab ids they opened or were given, and leave other tabs alone unless you ask.
   Tabs can be opened with options that stick: `group` (the tab group's title, and a handle to close them together),
-  `allowedOrigins`, `readOnly`, `keepVisible` and `browser`. Popups a page opens become agent tabs too.
+  `allowedOrigins`, `readOnly`, `keepVisible`, `keepOpen` (never close it as idle) and `browser`. Popups a page opens
+  become agent tabs too.
 - **Tabs keep their ids, and an agent can name one.** `tabs` with `action: "new"` and an `id` like `work-mail` opens
   that tab once: asking again returns the same tab without navigating it, and every tool takes `work-mail` as `tab`.
-  The id stays with the tab when the browser restarts (the extension keeps it on the tab), and a tab opened this way
-  is never closed as idle: only an agent or you close it. `tabs` lists each tab's id, url, title, group, last use and
-  whether a call is running in it.
+  The id lasts while the tab stays open: a relay restart or extension reload keeps it, and a browser restart loses it
+  (opening that id again is a fresh tab). `tabs` lists each tab's id, url, title, group, last use and whether a call is
+  running in it. A tab opened with `keepOpen: true` stays until an agent or you close it; every other tab closes when
+  idle like the rest.
 - **Agents open their own tabs** in the background of the window you last used, grouped together and collapsed unless
-  you're looking at one. Agents can't switch you to their tabs or bring a window to the front. Tabs nobody touches for
-  10 minutes close by themselves (never while something runs on them). Closing agent tabs never quits the browser: on
-  Windows and Linux, browse leaves a new tab (or window) behind when it would close the last one.
+  you're looking at one (you can turn that off). Agents can't switch you to their tabs or bring a window to the front.
+  Tabs nobody touches for 10 minutes close by themselves (never while something runs on them). Closing agent tabs never
+  quits the browser: on Windows and Linux, browse leaves a new tab (or window) behind when it would close the last one.
 - **Relay restarts keep agent tabs.** The relay saves the tabs agents opened and their options, and takes them back
   when it starts again (after an update, say).
 - **Hand an agent one of your tabs** by clicking the toolbar button on it. The badge shows **ON**; click again to take
@@ -230,8 +243,10 @@ clicking, typing, `execute`, capture) go through CDP, which Firefox doesn't have
 - **Several browsers at once.** Each connected browser has an id (like `firefox-laptop`); `status` lists them, and new
   tabs open in the default browser unless `browser` names another.
 - **Settings** (the extension's options page, applied right away): where agent tabs open (your window or their own),
-  grouping (one shared group, one per task, or none), when idle tabs close (10, 30, 60 minutes or never), human-like
-  input, and handoff notifications. Agents can read and change these with the `settings` tool when you ask them to.
+  grouping (one shared group, one per task, or none), whether browse collapses agent groups by itself or leaves them
+  as you set them (a handoff still opens its group so you can find the tab), when idle tabs close (10, 30, 60 minutes
+  or never), human-like input, and handoff notifications. Agents can read and change these with the `settings` tool
+  when you ask them to.
 
 ## Tools
 
@@ -274,23 +289,21 @@ The agent starts `browse mcp`, a small stdio proxy, which starts the relay on de
 relay over a WebSocket and authenticates with the key it got when you paired it.
 
 - **The relay** (`browse serve`, in `rust/`) keeps agent tabs, handoffs, recordings and network captures, serves the
-  tool API to the MCP server, and runs `execute` scripts in an embedded JavaScript engine (QuickJS). It exits when
-  nothing uses it.
-- **The add-on** (`src/`) keeps agent tabs in collapsed groups (or their own window), closes idle ones, shows the
-  toolbar badge and the handoff card, and reports status. Firefox has no debugger API, and removed CDP in Firefox
-  141, so page commands are answered with a precise "needs the Firefox-native driver" error instead of being driven;
-  everything else works.
+  tool API to the MCP server, and runs `execute` scripts in an embedded JavaScript engine (QuickJS). It runs until
+  it's stopped (`browse restart`, `browse uninstall`, a signal) or restarts onto an update.
+- **The add-on** (`src/`) keeps agent tabs in collapsed groups by default (or their own window), closes idle ones,
+  shows the toolbar badge and the handoff card, and reports status. Firefox has no debugger API, so page commands go
+  through a Firefox-native driver instead: navigate, read, screenshot, evaluate and layout work, and a CDP method the
+  driver doesn't implement says so precisely.
 - **Quiet in the page.** The page script runs only in the tabs agents use, adds a handoff card there and leaves no
-  globals behind. When the Firefox-native driver lands it keeps the same rules: no CDP domains pages can detect,
-  isolated worlds, and human-like input (curved mouse paths, paced typing, gliding scroll; turn *Human-like input*
-off for full speed).
+  globals behind. The native driver keeps the same rules: no CDP domains pages can detect, isolated worlds, and
+  human-like input (curved mouse paths, paced typing, gliding scroll; turn *Human-like input* off for full speed).
 
-Permissions: `tabs`, `tabGroups`, `storage`, `sessions` (to keep an agent tab's id on the tab, so it survives a
-browser restart), `alarms`, `scripting` (to add the handoff card only to tabs agents use), `webNavigation` (to keep
-popups agents open with their other tabs), `notifications` (to tell you an agent needs you), `management` (to tell a
-loaded-from-disk build from a signed one), and access to all sites so agents can work wherever you ask. There is no
-`debugger` permission: Firefox has no such API. Nothing leaves your computer except what your agent sends to its model
-provider; see the [privacy policy](store/privacy-policy.md).
+Permissions: `tabs`, `tabGroups`, `storage`, `alarms`, `scripting` (to add the handoff card only to tabs agents use),
+`webNavigation` (to keep popups agents open with their other tabs), `notifications` (to tell you an agent needs you),
+`management` (to tell a loaded-from-disk build from a signed one), and access to all sites so agents can work wherever
+you ask. There is no `debugger` permission: Firefox has no such API. Nothing leaves your computer except what your
+agent sends to its model provider; see the [privacy policy](store/privacy-policy.md).
 
 ## Security
 
@@ -313,8 +326,20 @@ to steer it, and that other programs on your computer may try to use the relay.
   refused. Closing a page is handled like closing a target: a tab you lent is released, not closed. Cookie and storage
   access is limited to the hosts of the tab's own pages. Agents can't open browser-internal pages, other extensions or
   local files, or raise windows over your work.
-- **Allowed sites (opt-in).** A tab opened with `allowedOrigins` can only go to those sites; read-only tabs only
-  inspect.
+- **Guardrails, not a data boundary.** `allowedOrigins` limits navigations, top-level documents and the tabs and popups
+  an agent opens; requests a page makes itself (fetch, XHR, images, scripts, iframes) are not filtered. `readOnly`
+  refuses clicks, hover, drag, typing, key presses, filling, selecting, uploads and navigation commands after the tab
+  opens. Scrolling to an element or to the page's edges still works. `eval` and `webmcp` still run JavaScript in the
+  page: they can read everything the page can, make requests as the page, and change it (click, submit, navigate).
+  Snapshots, screenshots and the cookies the page itself can see stay readable. These keep an agent from wandering: for
+  pages you don't want an agent to read, don't open them in browse.
+- **What output is masked.** `fill` hides values only for password and one-time-code fields. Snapshots leave out what's
+  typed in editable fields, but not other page text. Network capture redacts credentials by name and shape (auth and
+  API-key headers, cookie values, secret-named fields, token-like path segments), so a value under an ordinary name can
+  still come through. `eval` results, console messages, page text and screenshots are returned as they are.
+- **WebMCP tools come from the page.** Their names, titles, descriptions, schemas, annotations, `origin` and results are
+  whatever a page supplies; browse doesn't verify them, and an annotation like `readOnly` is only the page's word. Treat
+  them like any other page text, not as instructions from the user.
 - **Bot challenges.** After a navigation browse reports Cloudflare, captcha walls and "access denied" pages and tells
   the agent to hand interactive ones to you. It never solves them.
 - **Your tabs stay yours.** Agents use only tabs they opened or you lent them. Only a real click on the card or the
@@ -332,7 +357,7 @@ when it starts: it stops after 30 minutes without use, or run `browse restart` f
 | `OPENCODE_BROWSER_FILE_ROOTS` | More folders tools may read and write (path-list separated) |
 | `OPENCODE_BROWSER_AGENT_WINDOW=separate` | Open agent tabs in a separate window (`current`: in yours), overriding the options page |
 | `OPENCODE_BROWSER_HUMAN_INPUT=0` | Send input at full speed; overrides the options page |
-| `OPENCODE_BROWSER_AUTO_UPDATE=notify` | Only tell about new versions (`off`: don't check; `on`: install them, the default) |
+| `OPENCODE_BROWSER_AUTO_UPDATE=notify` | Only tell about new versions (`off`: check, but never install or tell; `on`: install them, the default) |
 | `OPENCODE_BROWSER_CHALLENGE_WAIT_MS=15000` | How long to wait for a bot check the browser clears by itself |
 | `OPENCODE_BROWSER_EXTENSION_TIMEOUT_MS=30000` | How long the relay waits for the extension to answer a command |
 | `OPENCODE_BROWSER_PING_TIMEOUT_MS=10000` | How long a ping may go unanswered before the browser counts as asleep |

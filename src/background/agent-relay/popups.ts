@@ -1,7 +1,6 @@
 import type { JsonObject } from "../../agent-relay/protocol"
 import { AgentWindow } from "./window"
 import { TabCleanup } from "../tab-cleanup"
-import { TabIdentity } from "../tab-identity"
 import { inTabGroup, tabGroupsAvailable, text, type AgentRelayLog } from "./wire"
 
 export function installPopupAdoption(deps: {
@@ -91,8 +90,7 @@ export function installPopupAdoption(deps: {
       // Playwright sees it (page.waitForEvent("popup"), context.pages()).
       .finally(async () => {
         if (!deps.relayTabs.has(sourceTabId)) return
-        const browseId = await TabIdentity.ensure(tabId, { agent: true })
-        deps.send({ method: "tabs.opened", params: { tabId, openerTabId: sourceTabId, ...(browseId ? { browseId } : {}) } })
+        deps.send({ method: "tabs.opened", params: { tabId, openerTabId: sourceTabId } })
       })
   })
 }

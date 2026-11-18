@@ -45,7 +45,9 @@ opencode and Hex; releases still come from `dev`.
 3. The run (only repository admins and maintainers may start one; `plan` checks the dispatching actor):
 
 ```
-plan    version from cli/package.json + bump; actor is admin or maintain; notes well-formed; not on npm yet
+plan    version from the newest of cli/package.json and the newest v* tag, + bump (the tag exists before any publish,
+        so a release commit that missed dev still counts), on a commit that contains the newest tag's commit; actor is
+        admin or maintain; notes well-formed; not on npm yet
 tag     commits the versions (cli/package.json, package.json, public/manifest.json, rust/Cargo.toml, rust/Cargo.lock)
         and changelog/<version>.md from the notes on the dispatched commit, pushes only the tag v<version> (deploy key);
         git, sed, awk and jq only
@@ -57,6 +59,8 @@ build-binaries  packs and checks the @opencode/browse-<target> tarballs (every t
         the linux-x64 ones: the install script against a local release service, relay + MCP, npm install of
         @opencode/browse with its platform package
 sign-macos      optional (repository variable MACOS_SIGNING=true): Developer ID signs the macOS binaries; skipped now
+sign-windows    optional (repository variable WINDOWS_SIGNING=true): Authenticode signs the Windows binaries (Azure
+        Trusted Signing; Smart App Control blocks an unsigned browse.exe); skipped now
 attest  build provenance for the zip and every tarball (Sigstore)
 publish-release-service       the extension zip and every CLI binary target to the release service (channel dev or
         stable); a check run prints the list and publishes nothing
@@ -67,10 +71,10 @@ push-release-to-dev           pushes the release commit to dev (deploy key), so 
 ```
 
 AMO review takes hours to a few days (it shows in the Developer Hub); a version still in review can be cancelled
-there, and a fixed version needs a new version number. Binary installs follow the
-release service at launch and at least hourly, and switch when no agent is using the browser; npm installs check once
-an hour and switch the same way; a signed Firefox add-on updates from addons.mozilla.org, and a temporary one is
-replaced by rebuilding it (`./setup-full.sh --extension-only`).
+there, and a fixed version needs a new version number. Every running relay checks the release service at launch and
+hourly, in every update mode; binary and npm installs switch when no agent is using the browser; a signed Firefox
+add-on updates from addons.mozilla.org, and a temporary one is replaced by rebuilding it
+(`./setup-full.sh --extension-only`).
 
 **If a job fails**, fix it and rerun the failed jobs. Publishing is idempotent: a version that's already on npm,
 already uploaded to addons.mozilla.org, or already current on the release service is skipped, and the tag is reused when it
@@ -141,9 +145,12 @@ checks the token against `registry/browse.json` there ([scripts/release-registry
 | `cli` | `windows-x64`, `windows-x64-baseline` | `opencode-browse-windows-<arch>-<version>.tgz` | https://anoma.ly/release/browse/cli/stable/windows-x64 |
 
 Every target has a `.../<target>/info` with its version, size and SHA-256. `install` reads the manifest, checks the
-file's size and SHA-256 and installs it; a binary install's updater polls `cli/<stable|dev>.json` at launch and at
-least hourly with `If-None-Match` and User-Agent `browse/<channel>/<version>/cli`. `--version` stays on npm because the
-protocol has one current release per channel and no version lookup. npm global installs keep reading npm's dist-tag.
+file's size and SHA-256 and installs it; every relay (except a checkout build) polls `cli/<stable|dev>.json` at launch
+and hourly, even with updates off, with User-Agent `browse/<channel>/<version>/cli/<kind>` (`binary`, `npm`, `bun`,
+`pnpm`, `yarn`, `volta`, `npx`, `bunx`, `pnpm-dlx`, `yarn-dlx`, `other` for an install browse didn't make, which only checks), which the protocol allows after its artifact segment
+and lets analytics split installs by kind. A binary install downloads the manifest's file; a global install runs its
+package manager for `@opencode/browse@<the manifest's version>`, and retries quietly while npm doesn't have that version
+yet. `--version` stays on npm because the protocol has one current release per channel and no version lookup.
 
 A TypeScript binary install's updater (0.0.17 and earlier) runs the install script baked into the binary it is running,
 so those releases keep reading future channel manifests with their own installer: the cli tarballs keep the layout
@@ -198,6 +205,18 @@ older installers: relative `url`s, flat target objects, and `release.version` be
     the certificate is `shared/APPLE_SIGNING_CERTIFICATE` in AWS (a Developer ID Application certificate exported
     without a password, base64 encoded, shared with every Anomaly app); then `gh variable set MACOS_SIGNING --body true`
     and the sign-macos job runs, with publish-npm taking the macOS packages only from it.
+11. **Windows signing (optional).** Without it `browse.exe` is unsigned and Windows Smart App Control blocks it, so
+    install fails there. To sign with Azure Trusted Signing (now Artifact Signing): a signing account and certificate
+    profile; an Azure identity with the **Artifact Signing Certificate Profile Signer** role (formerly Trusted Signing
+    Certificate Profile Signer) on the account or profile and read access to the subscription; and a federated
+    credential on that identity for this repository's `release` environment (issuer
+    `https://token.actions.githubusercontent.com`, subject `repo:anomalyco/browse:environment:release`, audience
+    `api://AzureADTokenExchange`). Then the six repository variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
+    `AZURE_SUBSCRIPTION_ID`, `AZURE_TRUSTED_SIGNING_ENDPOINT`, `AZURE_TRUSTED_SIGNING_ACCOUNT_NAME` and
+    `AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE`, and `gh variable set WINDOWS_SIGNING --body true`: the sign-windows
+    job signs every `browse.exe` in the Windows tarballs over OIDC (no secret), checks each signature and repacks them,
+    and publish-npm and the release service take the Windows packages only from it. macOS and Windows signing are
+    independent; either, both or neither can be on.
 
 ## Secrets
 
@@ -213,6 +232,10 @@ publishing).
 | `browse/release/RELEASE_TAG_KEY` | the release deploy key: `tag` pushes `v<version>`, `push-release-to-dev` pushes the release commit |
 | `browse/release/AMO_API_KEY`, `browse/release/AMO_API_SECRET` | `web-ext sign` for the Firefox add-on (also used by hand; addons.mozilla.org's Developer Hub rotates them) |
 | `shared/APPLE_SIGNING_CERTIFICATE` | `sign-macos`, when the repository variable `MACOS_SIGNING` is true |
+
+The signing switches (`MACOS_SIGNING`, `WINDOWS_SIGNING`) and the Azure ids the Windows signer logs in with are
+repository variables, not secrets.
+
 
 ## Undoing a bad release
 

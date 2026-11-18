@@ -63,7 +63,7 @@ describe("Firefox manifest", () => {
   })
 
   test("keeps the APIs the add-on uses", () => {
-    for (const permission of ["tabs", "tabGroups", "storage", "sessions", "alarms", "webNavigation", "scripting", "notifications"])
+    for (const permission of ["tabs", "tabGroups", "storage", "alarms", "webNavigation", "scripting", "notifications"])
       expect(merged().permissions).toContain(permission)
     expect(merged().host_permissions).toEqual(["<all_urls>"])
     expect(merged().options_ui).toEqual(chromeManifest.options_ui)
